@@ -8,9 +8,12 @@ WARNING: This code is under development and may undergo changes in future releas
 Backwards compatibility is not guaranteed at this time.
 """
 
+import os
 from core.utils.utils import log
 from core.llm import ask_llm
 import asyncio
+from typing import Any
+import httpx
 import json
 from core.utils.json_utils import trim_json
 from core.prompts import find_prompt, fill_prompt
@@ -156,7 +159,52 @@ The user's question is: {request.query}. The item's description is {item.descrip
         self.num_results_sent = 0
         self.rankedAnswers = []
         self.ranking_type = ranking_type
+        self.usePi = os.environ.get("WITHPI_API_KEY", "") != ""
+        self.scoreThreshold = 0 if self.usePi else 51
+        self.client = httpx.AsyncClient(timeout=10.0)
 #        self._results_lock = asyncio.Lock()  # Add lock for thread-safe operations
+
+    async def piScoreItem(self, description: str) -> int:
+        resp = await self.client.post("https://api.withpi.ai/v1/scoring_system/score",
+            headers={"x-api-key": os.environ.get("WITHPI_API_KEY", "")},
+            json={
+                "llm_input": self.handler.query,
+                "llm_output": description,
+                "scoring_spec": [
+                    {"question": "Is the output relevant to the input query?"}
+                ]
+            }
+        )
+        resp.raise_for_status()
+        score_result = resp.json()
+        return int(score_result["total_score"]*100)
+    
+    def getFirst(self, field: list[str] | str) -> str:
+        if isinstance(field, list):
+            if len(field) > 0:
+                return field[0]
+            else:
+                return ""
+        elif isinstance(field, str):
+            return field
+        else:
+            return str(field)
+    
+    def getDescription(self, schema_org: dict[str, Any] | str) -> str:
+        if isinstance(schema_org, dict):
+            if 'description' in schema_org:
+                logger.error("Description found: %s", schema_org['description'])
+                return self.getFirst(schema_org['description'])
+            elif 'text' in schema_org:
+                return self.getFirst(schema_org['text'])
+            elif 'name' in schema_org:
+                return self.getFirst(schema_org['name'])
+            else:
+                return json.dumps(schema_org)  # Fallback to full JSON string
+        elif isinstance(schema_org, str):
+            return schema_org
+        else:
+            return str(schema_org)
 
     async def rankItem(self, url, json_str, name, site):
        
@@ -165,10 +213,17 @@ The user's question is: {request.query}. The item's description is {item.descrip
             logger.info("Aborting fast track")
             return
         try:
-            prompt_str, ans_struc = self.get_ranking_prompt()
             description = trim_json(json_str)
-            prompt = fill_prompt(prompt_str, self.handler, {"item.description": description})
-            ranking = await ask_llm(prompt, ans_struc, level=self.level, query_params=self.handler.query_params)
+            if self.usePi:
+                pi_score = await self.piScoreItem(str(description))
+                ranking = {
+                    "score": pi_score,
+                    "description": self.getDescription(description),
+                }
+            else:
+                prompt_str, ans_struc = self.get_ranking_prompt()
+                prompt = fill_prompt(prompt_str, self.handler, {"item.description": description})
+                ranking = await ask_llm(prompt, ans_struc, level=self.level, query_params=self.handler.query_params)
             
             # Handle both string and dictionary inputs for json_str
             schema_object = json_str if isinstance(json_str, dict) else json.loads(json_str)
@@ -375,11 +430,11 @@ The user's question is: {request.query}. The item's description is {item.descrip
             logger.info("Fast track aborted after ranking tasks completed")
             return
     
-        filtered = [r for r in self.rankedAnswers if r['ranking']['score'] > 51]
+        filtered = [r for r in self.rankedAnswers if r['ranking']['score'] > self.scoreThreshold]
         ranked = sorted(filtered, key=lambda x: x['ranking']["score"], reverse=True)
         self.handler.final_ranked_answers = ranked[:self.NUM_RESULTS_TO_SEND]
         
-        logger.info(f"Filtered to {len(filtered)} results with score > 51")
+        logger.info(f"Filtered to {len(filtered)} results with score > {self.scoreThreshold}")
         logger.debug(f"Top 3 results: {[(r['name'], r['ranking']['score']) for r in ranked[:3]]}")
 
         results = [r for r in self.rankedAnswers if r['sent'] == False]
@@ -389,7 +444,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
        
         # Sort by score in descending order
         sorted_results = sorted(results, key=lambda x: x['ranking']["score"], reverse=True)
-        good_results = [x for x in sorted_results if x['ranking']["score"] > 51]
+        good_results = [x for x in sorted_results if x['ranking']["score"] > self.scoreThreshold]
 
         # Calculate how many more results we can send
         remaining_slots = self.NUM_RESULTS_TO_SEND - self.num_results_sent

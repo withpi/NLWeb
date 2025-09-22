@@ -3,7 +3,7 @@ FROM python:3.13-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc python3-dev && \
+    apt-get install -y --no-install-recommends g++ gcc python3-dev && \
     pip install --no-cache-dir --upgrade pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -21,12 +21,18 @@ FROM python:3.13-slim
 
 # Apply security updates
 RUN apt-get update && \
-   apt-get install -y --no-install-recommends --only-upgrade \
-       $(apt-get --just-print upgrade | grep "^Inst" | grep -i securi | awk '{print $2}') && \
-   apt-get clean && \
-   rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends --only-upgrade \
+    $(apt-get --just-print upgrade | grep "^Inst" | grep -i securi | awk '{print $2}') && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Copy application code
+COPY code/ /app/code/
+COPY static/ /app/static/
+COPY config/ /app/config/
+COPY data/ /app/data/
 
 # Create a non-root user and set permissions
 RUN groupadd -r nlweb && \
@@ -34,10 +40,6 @@ RUN groupadd -r nlweb && \
     chown -R nlweb:nlweb /app
 
 USER nlweb
-
-# Copy application code
-COPY code/ /app/
-COPY static/ /app/static/
 
 # Copy installed packages from builder stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
@@ -52,5 +54,7 @@ ENV PYTHONPATH=/app
 ENV PORT=8000
 ENV NLWEB_CONFIG_DIR=/app/config
 
+WORKDIR /app/code/python
+
 # Command to run the application
-CMD ["python", "python/app-file.py"]
+CMD ["python", "app-aiohttp.py"]
