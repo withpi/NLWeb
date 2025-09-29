@@ -2,7 +2,7 @@
 # Licensed under the MIT License
 
 """
-This file contains the code for the ranking stage. 
+This file contains the code for the ranking stage.
 
 WARNING: This code is under development and may undergo changes in future releases.
 Backwards compatibility is not guaranteed at this time.
@@ -18,13 +18,19 @@ import json
 from core.utils.json_utils import trim_json
 from core.prompts import find_prompt, fill_prompt
 from misc.logger.logging_config_helper import get_configured_logger
-from core.schemas import create_assistant_result, create_status_message, Message, SenderType, MessageType
+from core.schemas import (
+    create_assistant_result,
+    create_status_message,
+    Message,
+    SenderType,
+    MessageType,
+)
 
 logger = get_configured_logger("ranking_engine")
 
 
 class Ranking:
-     
+
     EARLY_SEND_THRESHOLD = 59
     NUM_RESULTS_TO_SEND = 10
 
@@ -34,16 +40,21 @@ class Ranking:
     CONVERSATION_SEARCH = 4
 
     # This is the default ranking prompt, in case, for some reason, we can't find the site_type.xml file.
-    RANKING_PROMPT = ["""  Assign a score between 0 and 100 to the following {site.itemType}
+    RANKING_PROMPT = [
+        """  Assign a score between 0 and 100 to the following {site.itemType}
 based on how relevant it is to the user's question. Use your knowledge from other sources, about the item, to make a judgement. 
 If the score is above 50, provide a short description of the item highlighting the relevance to the user's question, without mentioning the user's question.
 Provide an explanation of the relevance of the item to the user's question, without mentioning the user's question or the score or explicitly mentioning the term relevance.
 If the score is below 75, in the description, include the reason why it is still relevant.
 The user's question is: {request.query}. The item's description is {item.description}""",
-    {"score" : "integer between 0 and 100", 
- "description" : "short description of the item"}]
-    
-    WHO_RANKING_PROMPT = ["""  Assign a score between 0 and 100 to the following site
+        {
+            "score": "integer between 0 and 100",
+            "description": "short description of the item",
+        },
+    ]
+
+    WHO_RANKING_PROMPT = [
+        """  Assign a score between 0 and 100 to the following site
                           based on how relevant the site may be to answering the user's question.
                           The user's question is: {request.query}. The site's description is {item.description}
                           
@@ -60,11 +71,15 @@ The user's question is: {request.query}. The item's description is {item.descrip
                           
                           If the original query is already well-suited for the site, use the original query.
                           """,
-                            {"score" : "integer between 0 and 100", 
-                            "description" : "short description of the item",
-                            "query" : "the optimized query to send to this site (only if score > 50)"}]
-    
-    CONVERSATION_SEARCH_PROMPT = ["""Assign a score between 0 and 100 to the following past conversation
+        {
+            "score": "integer between 0 and 100",
+            "description": "short description of the item",
+            "query": "the optimized query to send to this site (only if score > 50)",
+        },
+    ]
+
+    CONVERSATION_SEARCH_PROMPT = [
+        """Assign a score between 0 and 100 to the following past conversation
                           based on how relevant it is to the user's current search query.
                           Consider both the original question asked and the response received.
                           
@@ -79,10 +94,14 @@ The user's question is: {request.query}. The item's description is {item.descrip
                           - The conversation summary or topics match the search intent
                           
                           Provide a brief description highlighting why this conversation is relevant.""",
-                          {"score": "integer between 0 and 100",
-                           "description": "brief description of why this past conversation is relevant to the search"}]
-    
-    PRODUCT_FOCUSED_PROMPT = ["""Assign a score between 0 and 100 based on how well this product matches the user's search.
+        {
+            "score": "integer between 0 and 100",
+            "description": "brief description of why this past conversation is relevant to the search",
+        },
+    ]
+
+    PRODUCT_FOCUSED_PROMPT = [
+        """Assign a score between 0 and 100 based on how well this product matches the user's search.
                           
                           Focus on product details in your description:
                           - Product name and brand (if available)
@@ -100,45 +119,70 @@ The user's question is: {request.query}. The item's description is {item.descrip
                           
                           The user's search: {request.query}
                           Product information: {item.description}""",
-                          {"score": "integer between 0 and 100",
-                           "description": "product-focused description with brand, price, and key features"}]
- 
+        {
+            "score": "integer between 0 and 100",
+            "description": "product-focused description with brand, price, and key features",
+        },
+    ]
+
     RANKING_PROMPT_NAME = "RankingPrompt"
-     
+
     def get_ranking_prompt(self):
         site = self.handler.site
         item_type = self.handler.item_type
-        
+
         # Check for special ranking types first
-        if (self.ranking_type == Ranking.WHO_RANKING):
+        if self.ranking_type == Ranking.WHO_RANKING:
             return self.WHO_RANKING_PROMPT[0], self.WHO_RANKING_PROMPT[1]
-        if (self.ranking_type == Ranking.CONVERSATION_SEARCH):
-            return self.CONVERSATION_SEARCH_PROMPT[0], self.CONVERSATION_SEARCH_PROMPT[1]
-        
+        if self.ranking_type == Ranking.CONVERSATION_SEARCH:
+            return (
+                self.CONVERSATION_SEARCH_PROMPT[0],
+                self.CONVERSATION_SEARCH_PROMPT[1],
+            )
+
         # Check if using Bing search or any e-commerce/product sites
-        db_param = self.handler.query_params.get('db') if hasattr(self.handler, 'query_params') else None
-        
+        db_param = (
+            self.handler.query_params.get("db")
+            if hasattr(self.handler, "query_params")
+            else None
+        )
+
         # Use product-focused prompt for Bing search or known e-commerce sites
-        if db_param == 'bing_search':
+        if db_param == "bing_search":
             logger.debug("Using product-focused prompt for Bing search")
             return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-        
+
         # Also use product-focused prompt for known e-commerce sites
-        if site and any(ecommerce_site in site.lower() for ecommerce_site in 
-                       ['williams-sonoma', 'amazon', 'ebay', 'walmart', 'target', 'bestbuy', 
-                        'homedepot', 'lowes', 'wayfair', 'etsy', 'shopify']):
+        if site and any(
+            ecommerce_site in site.lower()
+            for ecommerce_site in [
+                "williams-sonoma",
+                "amazon",
+                "ebay",
+                "walmart",
+                "target",
+                "bestbuy",
+                "homedepot",
+                "lowes",
+                "wayfair",
+                "etsy",
+                "shopify",
+            ]
+        ):
             logger.debug(f"Using product-focused prompt for e-commerce site: {site}")
             return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-        
+
         # Check for custom prompts
         prompt_str, ans_struc = find_prompt(site, item_type, self.RANKING_PROMPT_NAME)
         if prompt_str is None:
             logger.debug("Using default ranking prompt")
             return self.RANKING_PROMPT[0], self.RANKING_PROMPT[1]
         else:
-            logger.debug(f"Using custom ranking prompt for site: {site}, item_type: {item_type}")
+            logger.debug(
+                f"Using custom ranking prompt for site: {site}, item_type: {item_type}"
+            )
             return prompt_str, ans_struc
-        
+
     def __init__(self, handler, items, ranking_type=FAST_TRACK, level="low"):
         ll = len(items)
         if ranking_type == self.FAST_TRACK:
@@ -151,7 +195,9 @@ The user's question is: {request.query}. The item's description is {item.descrip
             self.ranking_type_str = "CONVERSATION_SEARCH"
         else:
             self.ranking_type_str = "UNKNOWN"
-        logger.info(f"Initializing Ranking with {ll} items, type: {self.ranking_type_str}")
+        logger.info(
+            f"Initializing Ranking with {ll} items, type: {self.ranking_type_str}"
+        )
         logger.info(f"Ranking {ll} items of type {self.ranking_type_str}")
         self.handler = handler
         self.level = level
@@ -162,23 +208,28 @@ The user's question is: {request.query}. The item's description is {item.descrip
         self.usePi = os.environ.get("WITHPI_API_KEY", "") != ""
         self.scoreThreshold = 0 if self.usePi else 51
         self.client = httpx.AsyncClient(timeout=10.0)
-#        self._results_lock = asyncio.Lock()  # Add lock for thread-safe operations
+
+    #        self._results_lock = asyncio.Lock()  # Add lock for thread-safe operations
 
     async def piScoreItem(self, description: str) -> int:
-        resp = await self.client.post("https://api.withpi.ai/v1/scoring_system/score",
-            headers={"x-api-key": os.environ.get("WITHPI_API_KEY", "")},
+        resp = await self.client.post(
+            "https://api.withpi.ai/v1/scoring_system/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-model-override": "pi-scorer-bert:modal:https://pilabs--pi-modelserver-scorermodel-invocations.modal.run",
+            },
             json={
                 "llm_input": self.handler.query,
                 "llm_output": description,
                 "scoring_spec": [
-                    {"question": "Is the output relevant to the input query?"}
-                ]
-            }
+                    {"question": "Is the response relevant to the input?"}
+                ],
+            },
         )
         resp.raise_for_status()
         score_result = resp.json()
-        return int(score_result["total_score"]*100)
-    
+        return int(score_result["total_score"] * 100)
+
     def getFirst(self, field: list[str] | str) -> str:
         if isinstance(field, list):
             if len(field) > 0:
@@ -189,16 +240,16 @@ The user's question is: {request.query}. The item's description is {item.descrip
             return field
         else:
             return str(field)
-    
+
     def getDescription(self, schema_org: dict[str, Any] | str) -> str:
         if isinstance(schema_org, dict):
-            if 'description' in schema_org:
-                logger.error("Description found: %s", schema_org['description'])
-                return self.getFirst(schema_org['description'])
-            elif 'text' in schema_org:
-                return self.getFirst(schema_org['text'])
-            elif 'name' in schema_org:
-                return self.getFirst(schema_org['name'])
+            if "description" in schema_org:
+                logger.error("Description found: %s", schema_org["description"])
+                return self.getFirst(schema_org["description"])
+            elif "text" in schema_org:
+                return self.getFirst(schema_org["text"])
+            elif "name" in schema_org:
+                return self.getFirst(schema_org["name"])
             else:
                 return json.dumps(schema_org)  # Fallback to full JSON string
         elif isinstance(schema_org, str):
@@ -207,8 +258,11 @@ The user's question is: {request.query}. The item's description is {item.descrip
             return str(schema_org)
 
     async def rankItem(self, url, json_str, name, site):
-       
-        if (self.ranking_type == Ranking.FAST_TRACK and self.handler.state.should_abort_fast_track()):
+
+        if (
+            self.ranking_type == Ranking.FAST_TRACK
+            and self.handler.state.should_abort_fast_track()
+        ):
             logger.info("Fast track aborted, skipping item ranking")
             logger.info("Aborting fast track")
             return
@@ -222,84 +276,106 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 }
             else:
                 prompt_str, ans_struc = self.get_ranking_prompt()
-                prompt = fill_prompt(prompt_str, self.handler, {"item.description": description})
-                ranking = await ask_llm(prompt, ans_struc, level=self.level, query_params=self.handler.query_params)
-            
+                prompt = fill_prompt(
+                    prompt_str, self.handler, {"item.description": description}
+                )
+                ranking = await ask_llm(
+                    prompt,
+                    ans_struc,
+                    level=self.level,
+                    query_params=self.handler.query_params,
+                )
+
             # Handle both string and dictionary inputs for json_str
-            schema_object = json_str if isinstance(json_str, dict) else json.loads(json_str)
-            
+            schema_object = (
+                json_str if isinstance(json_str, dict) else json.loads(json_str)
+            )
+
             # If schema_object is an array, set it to the first item
             if isinstance(schema_object, list) and len(schema_object) > 0:
                 schema_object = schema_object[0]
-            
+
             ansr = {
-                'url': url,
-                'site': site,
-                'name': name,
-                'ranking': ranking,
-                'schema_object': schema_object,
-                'sent': False,
+                "url": url,
+                "site": site,
+                "name": name,
+                "ranking": ranking,
+                "schema_object": schema_object,
+                "sent": False,
             }
-            
+
             # Check if required_item_type is specified and filter based on @type
             if self.handler.required_item_type is not None:
-                item_type = schema_object.get('@type', None)
+                item_type = schema_object.get("@type", None)
                 if item_type != self.handler.required_item_type:
-                    logger.debug(f"Item type mismatch: expected {self.handler.required_item_type}, got {item_type} - setting score to 0")
+                    logger.debug(
+                        f"Item type mismatch: expected {self.handler.required_item_type}, got {item_type} - setting score to 0"
+                    )
                     ranking["score"] = 0
-            
-            if (ranking["score"] > self.EARLY_SEND_THRESHOLD):
-                logger.info(f"High score item: {name} (score: {ranking['score']}) - sending early {self.ranking_type_str}")
+
+            if ranking["score"] > self.EARLY_SEND_THRESHOLD:
+                logger.info(
+                    f"High score item: {name} (score: {ranking['score']}) - sending early {self.ranking_type_str}"
+                )
                 try:
                     await self.sendAnswers([ansr])
                 except (BrokenPipeError, ConnectionResetError):
-                    logger.warning(f"Client disconnected while sending early answer for {name}")
+                    logger.warning(
+                        f"Client disconnected while sending early answer for {name}"
+                    )
                     self.handler.connection_alive_event.clear()
                     return
-            
-#            async with self._results_lock:  # Use lock when modifying shared state
+
+            #            async with self._results_lock:  # Use lock when modifying shared state
             self.rankedAnswers.append(ansr)
             logger.debug(f"Item {name} added to ranked answers")
-        
+
         except Exception as e:
             logger.error(f"Error in rankItem for {name}: {str(e)}")
             logger.debug(f"Full error trace: ", exc_info=True)
             # Import here to avoid circular import
             from config.config import CONFIG
+
             if CONFIG.should_raise_exceptions():
                 raise  # Re-raise in testing/development mode
 
     def shouldSend(self, result):
         # Don't send if we've already reached the limit
         if self.num_results_sent >= self.NUM_RESULTS_TO_SEND:
-            logger.debug(f"Not sending {result['name']} - already at limit ({self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})")
+            logger.debug(
+                f"Not sending {result['name']} - already at limit ({self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})"
+            )
             return False
-            
+
         should_send = False
         # Allow sending if we're still well below the limit
-        if (self.num_results_sent < self.NUM_RESULTS_TO_SEND - 3):
+        if self.num_results_sent < self.NUM_RESULTS_TO_SEND - 3:
             should_send = True
         else:
             # Near the limit - only send if this result is better than something we already sent
             for r in self.rankedAnswers:
-                if r["sent"] == True and r["ranking"]["score"] < result["ranking"]["score"]:
+                if (
+                    r["sent"] == True
+                    and r["ranking"]["score"] < result["ranking"]["score"]
+                ):
                     should_send = True
                     break
-        
-        logger.debug(f"Should send result {result['name']}? {should_send} (sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})")
+
+        logger.debug(
+            f"Should send result {result['name']}? {should_send} (sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})"
+        )
         return should_send
-    
+
     async def sendAnswers(self, answers, force=False):
         if not self.handler.connection_alive_event.is_set():
             logger.warning("Connection lost during ranking, skipping sending results")
             return
-        
+
         # If this is FastTrack ranking, wait for prechecks to complete before sending
         if self.ranking_type == Ranking.FAST_TRACK:
             try:
                 prechecks_done = await asyncio.wait_for(
-                    self.handler.state.wait_for_prechecks(),
-                    timeout=5.0
+                    self.handler.state.wait_for_prechecks(), timeout=5.0
                 )
                 if not prechecks_done:
                     logger.info("Fast track aborted: prechecks not complete")
@@ -307,21 +383,23 @@ The user's question is: {request.query}. The item's description is {item.descrip
             except asyncio.TimeoutError:
                 logger.warning("Fast track: prechecks timed out, not sending answers")
                 return
-                
+
             # Check abort conditions after prechecks
             if self.handler.state.should_abort_fast_track():
                 logger.info("Fast track aborted, not sending answers")
                 return
-              
+
         json_results = []
         logger.debug(f"Considering sending {len(answers)} answers (force: {force})")
-        
+
         for result in answers:
             # Additional safety check - never exceed the limit even when forced
             if self.num_results_sent + len(json_results) >= self.NUM_RESULTS_TO_SEND:
-                logger.info(f"Stopping at {len(json_results)} results to avoid exceeding limit of {self.NUM_RESULTS_TO_SEND}")
+                logger.info(
+                    f"Stopping at {len(json_results)} results to avoid exceeding limit of {self.NUM_RESULTS_TO_SEND}"
+                )
                 break
-                
+
             if self.shouldSend(result) or force:
                 result_item = {
                     "@type": "Item",
@@ -331,42 +409,52 @@ The user's question is: {request.query}. The item's description is {item.descrip
                     "siteUrl": result["site"],
                     "score": result["ranking"]["score"],
                     "description": result["ranking"]["description"],
-                    "schema_object": result["schema_object"]
+                    "schema_object": result["schema_object"],
                 }
-                
+
                 # Include query field for WHO ranking if present
-                if self.ranking_type == Ranking.WHO_RANKING and "query" in result["ranking"]:
+                if (
+                    self.ranking_type == Ranking.WHO_RANKING
+                    and "query" in result["ranking"]
+                ):
                     result_item["query"] = result["ranking"]["query"]
-                
+
                 json_results.append(result_item)
-                
+
                 result["sent"] = True
-            
-        if (json_results):  # Only attempt to send if there are results
+
+        if json_results:  # Only attempt to send if there are results
             # Wait for pre checks to be done using event
             await self.handler.pre_checks_done_event.wait()
-            
+
             # if we got here, prechecks are done. check once again for fast track abort
-            if (self.ranking_type == Ranking.FAST_TRACK and self.handler.state.should_abort_fast_track()):
+            if (
+                self.ranking_type == Ranking.FAST_TRACK
+                and self.handler.state.should_abort_fast_track()
+            ):
                 logger.info("Fast track aborted after pre-checks")
                 return
-            
+
             try:
                 # Final safety check before sending
                 if self.num_results_sent + len(json_results) > self.NUM_RESULTS_TO_SEND:
                     # Trim the results to not exceed the limit
                     allowed_count = self.NUM_RESULTS_TO_SEND - self.num_results_sent
                     json_results = json_results[:allowed_count]
-                    logger.warning(f"Trimmed results to {len(json_results)} to stay within limit of {self.NUM_RESULTS_TO_SEND}")
-                
-                if (self.ranking_type == Ranking.FAST_TRACK):
+                    logger.warning(
+                        f"Trimmed results to {len(json_results)} to stay within limit of {self.NUM_RESULTS_TO_SEND}"
+                    )
+
+                if self.ranking_type == Ranking.FAST_TRACK:
                     self.handler.fastTrackWorked = True
                     logger.info("Fast track ranking successful")
-                
+
                 # Use the new schema to create and auto-send the message
                 create_assistant_result(json_results, handler=self.handler)
                 self.num_results_sent += len(json_results)
-                logger.info(f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND}")
+                logger.info(
+                    f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND}"
+                )
             except (BrokenPipeError, ConnectionResetError) as e:
                 logger.error(f"Client disconnected while sending answers: {str(e)}")
                 log(f"Client disconnected while sending answers: {str(e)}")
@@ -375,40 +463,50 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 logger.error(f"Error sending answers: {str(e)}")
                 log(f"Error sending answers: {str(e)}")
                 self.handler.connection_alive_event.clear()
-  
+
     async def sendMessageOnSitesBeingAsked(self, top_embeddings):
-        if (self.handler.site == "all" or self.handler.site == "nlws"):
+        if self.handler.site == "all" or self.handler.site == "nlws":
             sites_in_embeddings = {}
             for url, json_str, name, site in top_embeddings:
                 sites_in_embeddings[site] = sites_in_embeddings.get(site, 0) + 1
-            
-            top_sites = sorted(sites_in_embeddings.items(), key=lambda x: x[1], reverse=True)[:3]
+
+            top_sites = sorted(
+                sites_in_embeddings.items(), key=lambda x: x[1], reverse=True
+            )[:3]
             top_sites_str = ", ".join([self.prettyPrintSite(x[0]) for x in top_sites])
             logger.info(f"Sending sites message: {top_sites_str}")
-            
+
             try:
                 # Create a custom message with asking_sites type
                 message = Message(
                     sender_type=SenderType.SYSTEM,
                     message_type="asking_sites",  # Custom message type
                     content="Asking " + top_sites_str,
-                    conversation_id=self.handler.conversation_id if hasattr(self.handler, 'conversation_id') else None
+                    conversation_id=(
+                        self.handler.conversation_id
+                        if hasattr(self.handler, "conversation_id")
+                        else None
+                    ),
                 )
                 asyncio.create_task(self.handler.send_message(message.to_dict()))
                 self.handler.sites_in_embeddings_sent = True
             except (BrokenPipeError, ConnectionResetError):
                 logger.warning("Client disconnected when sending sites message")
                 self.handler.connection_alive_event.clear()
-    
+
     async def do(self):
         logger.info(f"Starting ranking process with {len(self.items)} items")
         tasks = []
         for url, json_str, name, site in self.items:
-            if self.handler.connection_alive_event.is_set():  # Only add new tasks if connection is still alive
-                tasks.append(asyncio.create_task(self.rankItem(url, json_str, name, site)))
+            if (
+                self.handler.connection_alive_event.is_set()
+            ):  # Only add new tasks if connection is still alive
+                tasks.append(
+                    asyncio.create_task(self.rankItem(url, json_str, name, site))
+                )
             else:
                 logger.warning("Connection lost, not creating new ranking tasks")
-       
+
         await self.sendMessageOnSitesBeingAsked(self.items)
 
         try:
@@ -425,33 +523,50 @@ The user's question is: {request.query}. The item's description is {item.descrip
 
         # Wait for pre checks using event
         await self.handler.pre_checks_done_event.wait()
-        
-        if (self.ranking_type == Ranking.FAST_TRACK and self.handler.state.should_abort_fast_track()):
+
+        if (
+            self.ranking_type == Ranking.FAST_TRACK
+            and self.handler.state.should_abort_fast_track()
+        ):
             logger.info("Fast track aborted after ranking tasks completed")
             return
-    
-        filtered = [r for r in self.rankedAnswers if r['ranking']['score'] > self.scoreThreshold]
-        ranked = sorted(filtered, key=lambda x: x['ranking']["score"], reverse=True)
-        self.handler.final_ranked_answers = ranked[:self.NUM_RESULTS_TO_SEND]
-        
-        logger.info(f"Filtered to {len(filtered)} results with score > {self.scoreThreshold}")
-        logger.debug(f"Top 3 results: {[(r['name'], r['ranking']['score']) for r in ranked[:3]]}")
 
-        results = [r for r in self.rankedAnswers if r['sent'] == False]
-        if (self.num_results_sent > self.NUM_RESULTS_TO_SEND):
-            logger.info(f"Already sent {self.num_results_sent} results, returning without sending more")
+        filtered = [
+            r for r in self.rankedAnswers if r["ranking"]["score"] > self.scoreThreshold
+        ]
+        ranked = sorted(filtered, key=lambda x: x["ranking"]["score"], reverse=True)
+        self.handler.final_ranked_answers = ranked[: self.NUM_RESULTS_TO_SEND]
+
+        logger.info(
+            f"Filtered to {len(filtered)} results with score > {self.scoreThreshold}"
+        )
+        logger.debug(
+            f"Top 3 results: {[(r['name'], r['ranking']['score']) for r in ranked[:3]]}"
+        )
+
+        results = [r for r in self.rankedAnswers if r["sent"] == False]
+        if self.num_results_sent > self.NUM_RESULTS_TO_SEND:
+            logger.info(
+                f"Already sent {self.num_results_sent} results, returning without sending more"
+            )
             return
-       
+
         # Sort by score in descending order
-        sorted_results = sorted(results, key=lambda x: x['ranking']["score"], reverse=True)
-        good_results = [x for x in sorted_results if x['ranking']["score"] > self.scoreThreshold]
+        sorted_results = sorted(
+            results, key=lambda x: x["ranking"]["score"], reverse=True
+        )
+        good_results = [
+            x for x in sorted_results if x["ranking"]["score"] > self.scoreThreshold
+        ]
 
         # Calculate how many more results we can send
         remaining_slots = self.NUM_RESULTS_TO_SEND - self.num_results_sent
         if remaining_slots <= 0:
-            logger.info(f"Already sent {self.num_results_sent} results, at or above limit of {self.NUM_RESULTS_TO_SEND}")
+            logger.info(
+                f"Already sent {self.num_results_sent} results, at or above limit of {self.NUM_RESULTS_TO_SEND}"
+            )
             return
-            
+
         if len(good_results) >= remaining_slots:
             tosend = good_results[:remaining_slots]
         else:
@@ -468,4 +583,4 @@ The user's question is: {request.query}. The item's description is {item.descrip
     def prettyPrintSite(self, site):
         ans = site.replace("_", " ")
         words = ans.split()
-        return ' '.join(word.capitalize() for word in words)
+        return " ".join(word.capitalize() for word in words)
