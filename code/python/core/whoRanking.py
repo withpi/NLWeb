@@ -32,7 +32,6 @@ class WhoRanking:
         self.items = items
         self.num_results_sent = 0
         self.rankedAnswers = []
-        self.usePi = os.environ.get("WITHPI_API_KEY", "") != ""
         self.client = httpx.AsyncClient(timeout=10.0)
 
     async def piScoreItem(self, description: str) -> int:
@@ -105,7 +104,7 @@ The site's description is: {site_description}
         """Rank a single site for relevance to the query."""
         try:
             description = trim_json(json_str)
-            if self.usePi:
+            if self.handler.use_pi:
                 pi_score = await self.piScoreItem(str(description))
                 ranking = {
                     "score": pi_score,

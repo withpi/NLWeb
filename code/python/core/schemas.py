@@ -323,7 +323,7 @@ async def create_assistant_result(results: List[Dict[str, Any]],
     )
     
     if send and handler:
-        await handler.send_message(message.to_dict())å
+        await handler.send_message(message.to_dict())
     
     return message
 

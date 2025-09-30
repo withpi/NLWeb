@@ -112,6 +112,10 @@ class NLWebHandler:
         # Minimum score threshold for ranking - results below this score will be filtered out
         self.min_score = get_param(query_params, "min_score", int, 51)
 
+        # Minimum score threshold for ranking - results below this score will be filtered out
+        use_pi = get_param(query_params, "use_pi", str, "False")
+        self.use_pi = use_pi not in ["False", "false", "0", None]
+
         # Maximum number of results to return to the user
         self.max_results = get_param(query_params, "max_results", int, 10)
 
