@@ -191,7 +191,6 @@ The site's description is: {site_description}
 
         # Use min_score from handler if available, otherwise default to 51
         min_score_threshold = getattr(self.handler, 'min_score', 51)
-        logger.error(f"Using min_score_threshold={min_score_threshold}")
         # Use max_results from handler if available, otherwise use NUM_RESULTS_TO_SEND
         max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
         filtered = [r for r in self.rankedAnswers if r.get('ranking', {}).get('score', 0) > min_score_threshold]
