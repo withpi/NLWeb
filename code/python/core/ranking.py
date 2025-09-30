@@ -186,7 +186,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-model-override": "pi-scorer-bert:modal:https://pilabs--pi-modelserver-scorermodel-invocations.modal.run",
+                "x-model-override": "pi-scorer-bert:modal:https://pilabs--pi-modelserver-scorermodel-invocations-dev.modal.run",
             },
             json={
                 "llm_input": self.handler.query,
@@ -420,7 +420,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
                     logger.info("Fast track ranking successful")
 
                 # Use the new schema to create and auto-send the message
-                create_assistant_result(json_results, handler=self.handler)
+                await create_assistant_result(json_results, handler=self.handler)
                 self.num_results_sent += len(json_results)
                 logger.info(f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{max_results}")
             except (BrokenPipeError, ConnectionResetError) as e:

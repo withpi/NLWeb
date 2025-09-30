@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional, Union, List
 from enum import Enum
 import uuid
 
-
 class SenderType(str, Enum):
     """Who sent the message."""
     USER = "user"
@@ -298,7 +297,7 @@ def create_user_message(query: str, site: Optional[str] = None, mode: Optional[s
     return message
 
 
-def create_assistant_result(results: List[Dict[str, Any]], 
+async def create_assistant_result(results: List[Dict[str, Any]], 
                            handler=None, 
                            metadata: Optional[Dict[str, Any]] = None,
                            send: bool = True) -> Message:
@@ -323,8 +322,7 @@ def create_assistant_result(results: List[Dict[str, Any]],
     )
     
     if send and handler:
-        import asyncio
-        asyncio.create_task(handler.send_message(message.to_dict()))
+        await handler.send_message(message.to_dict())
     
     return message
 

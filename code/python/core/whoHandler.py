@@ -113,8 +113,6 @@ class WhoHandler (NLWebHandler) :
             logger.info("Who ranking completed")
             logger.debug("Who ranking complete")
 
-            await asyncio.sleep(1)
-
             return self.return_value
 
         except Exception as e:
