@@ -197,7 +197,7 @@ The site's description is: {site_description}
         ranked = sorted(filtered, key=lambda x: x.get('ranking', {}).get("score", 0), reverse=True)
         self.handler.final_ranked_answers = ranked[:max_results]
 
-        print(f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > 70 ===")
+        print(f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ===")
 
         # Print the ranked sites with scores
         print("\nRanked sites (top 10):")
