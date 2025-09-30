@@ -385,11 +385,14 @@
           if (this.eventSource) {
             this.eventSource.close();
           }
+          const debugParams = new URLSearchParams(window.location.search);
+          const queryObj = Object.fromEntries(debugParams.entries());
 
           // Create URL with query parameters including previous queries
           const params = new URLSearchParams({
             query: query,
-            streaming: 'true'  // Use streaming mode
+            streaming: 'true',  // Use streaming mode
+            ...queryObj // Preserve other URL params (like retrieval, db, etc.)
           });
           
           // Add previous queries for context (limit to last 3 queries)

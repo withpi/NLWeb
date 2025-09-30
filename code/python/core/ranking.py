@@ -420,7 +420,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
                     logger.info("Fast track ranking successful")
 
                 # Use the new schema to create and auto-send the message
-                create_assistant_result(json_results, handler=self.handler)
+                await create_assistant_result(json_results, handler=self.handler)
                 self.num_results_sent += len(json_results)
                 logger.info(f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{max_results}")
             except (BrokenPipeError, ConnectionResetError) as e:
