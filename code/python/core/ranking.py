@@ -18,14 +18,8 @@ import json
 from core.utils.json_utils import trim_json
 from core.prompts import find_prompt, fill_prompt
 from misc.logger.logging_config_helper import get_configured_logger
-from core.schemas import (
-    create_assistant_result,
-    create_status_message,
-    Message,
-    SenderType,
-    MessageType,
-)
-
+from core.schemas import create_assistant_result, create_status_message, Message, SenderType, MessageType
+from core.utils.utils import record_llm_call
 logger = get_configured_logger("ranking_engine")
 
 
@@ -148,39 +142,14 @@ The user's question is: {request.query}. The item's description is {item.descrip
         )
 
         # Use product-focused prompt for Bing search or known e-commerce sites
-        if db_param == "bing_search":
-            logger.debug("Using product-focused prompt for Bing search")
+        if db_param == 'bing_search':
             return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-
-        # Also use product-focused prompt for known e-commerce sites
-        if site and any(
-            ecommerce_site in site.lower()
-            for ecommerce_site in [
-                "williams-sonoma",
-                "amazon",
-                "ebay",
-                "walmart",
-                "target",
-                "bestbuy",
-                "homedepot",
-                "lowes",
-                "wayfair",
-                "etsy",
-                "shopify",
-            ]
-        ):
-            logger.debug(f"Using product-focused prompt for e-commerce site: {site}")
-            return self.PRODUCT_FOCUSED_PROMPT[0], self.PRODUCT_FOCUSED_PROMPT[1]
-
+       
         # Check for custom prompts
         prompt_str, ans_struc = find_prompt(site, item_type, self.RANKING_PROMPT_NAME)
         if prompt_str is None:
-            logger.debug("Using default ranking prompt")
             return self.RANKING_PROMPT[0], self.RANKING_PROMPT[1]
         else:
-            logger.debug(
-                f"Using custom ranking prompt for site: {site}, item_type: {item_type}"
-            )
             return prompt_str, ans_struc
 
     def __init__(self, handler, items, ranking_type=FAST_TRACK, level="low"):
@@ -199,6 +168,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
             f"Initializing Ranking with {ll} items, type: {self.ranking_type_str}"
         )
         logger.info(f"Ranking {ll} items of type {self.ranking_type_str}")
+        logger.info(f"Starting ranking of {ll} items (type: {self.ranking_type_str})")
         self.handler = handler
         self.level = level
         self.items = items
@@ -259,10 +229,10 @@ The user's question is: {request.query}. The item's description is {item.descrip
 
     async def rankItem(self, url, json_str, name, site):
 
-        if (
-            self.ranking_type == Ranking.FAST_TRACK
-            and self.handler.state.should_abort_fast_track()
-        ):
+        # Debug: Print site information
+        # print(f"[rankItem] Processing item - URL: {url}, Site: {site}, Handler.site: {getattr(self.handler, 'site', 'NO SITE ATTR')}")
+
+        if (self.ranking_type == Ranking.FAST_TRACK and self.handler.state.should_abort_fast_track()):
             logger.info("Fast track aborted, skipping item ranking")
             logger.info("Aborting fast track")
             return
@@ -296,14 +266,16 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 schema_object = schema_object[0]
 
             ansr = {
-                "url": url,
-                "site": site,
-                "name": name,
-                "ranking": ranking,
-                "schema_object": schema_object,
-                "sent": False,
+                'url': url,
+                'site': site,
+                'name': name,
+                'ranking': ranking,
+                'schema_object': schema_object,
+                'sent': False
             }
 
+            record_llm_call(ansr, prompt_str, self.handler.query)
+            
             # Check if required_item_type is specified and filter based on @type
             if self.handler.required_item_type is not None:
                 item_type = schema_object.get("@type", None)
@@ -340,16 +312,17 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 raise  # Re-raise in testing/development mode
 
     def shouldSend(self, result):
+        # Get max_results from handler, or use default
+        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
+
         # Don't send if we've already reached the limit
-        if self.num_results_sent >= self.NUM_RESULTS_TO_SEND:
-            logger.debug(
-                f"Not sending {result['name']} - already at limit ({self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})"
-            )
+        if self.num_results_sent >= max_results:
+            logger.debug(f"Not sending {result['name']} - already at limit ({self.num_results_sent}/{max_results})")
             return False
 
         should_send = False
         # Allow sending if we're still well below the limit
-        if self.num_results_sent < self.NUM_RESULTS_TO_SEND - 3:
+        if (self.num_results_sent < max_results - 3):
             should_send = True
         else:
             # Near the limit - only send if this result is better than something we already sent
@@ -361,9 +334,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
                     should_send = True
                     break
 
-        logger.debug(
-            f"Should send result {result['name']}? {should_send} (sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND})"
-        )
+        logger.debug(f"Should send result {result['name']}? {should_send} (sent: {self.num_results_sent}/{max_results})")
         return should_send
 
     async def sendAnswers(self, answers, force=False):
@@ -392,12 +363,13 @@ The user's question is: {request.query}. The item's description is {item.descrip
         json_results = []
         logger.debug(f"Considering sending {len(answers)} answers (force: {force})")
 
+        # Get max_results from handler, or use default
+        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
+
         for result in answers:
             # Additional safety check - never exceed the limit even when forced
-            if self.num_results_sent + len(json_results) >= self.NUM_RESULTS_TO_SEND:
-                logger.info(
-                    f"Stopping at {len(json_results)} results to avoid exceeding limit of {self.NUM_RESULTS_TO_SEND}"
-                )
+            if self.num_results_sent + len(json_results) >= max_results:
+                logger.info(f"Stopping at {len(json_results)} results to avoid exceeding limit of {max_results}")
                 break
 
             if self.shouldSend(result) or force:
@@ -437,24 +409,20 @@ The user's question is: {request.query}. The item's description is {item.descrip
 
             try:
                 # Final safety check before sending
-                if self.num_results_sent + len(json_results) > self.NUM_RESULTS_TO_SEND:
+                if self.num_results_sent + len(json_results) > max_results:
                     # Trim the results to not exceed the limit
-                    allowed_count = self.NUM_RESULTS_TO_SEND - self.num_results_sent
+                    allowed_count = max_results - self.num_results_sent
                     json_results = json_results[:allowed_count]
-                    logger.warning(
-                        f"Trimmed results to {len(json_results)} to stay within limit of {self.NUM_RESULTS_TO_SEND}"
-                    )
-
-                if self.ranking_type == Ranking.FAST_TRACK:
+                    logger.warning(f"Trimmed results to {len(json_results)} to stay within limit of {max_results}")
+                
+                if (self.ranking_type == Ranking.FAST_TRACK):
                     self.handler.fastTrackWorked = True
                     logger.info("Fast track ranking successful")
 
                 # Use the new schema to create and auto-send the message
                 create_assistant_result(json_results, handler=self.handler)
                 self.num_results_sent += len(json_results)
-                logger.info(
-                    f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND}"
-                )
+                logger.info(f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{max_results}")
             except (BrokenPipeError, ConnectionResetError) as e:
                 logger.error(f"Client disconnected while sending answers: {str(e)}")
                 log(f"Client disconnected while sending answers: {str(e)}")
@@ -481,12 +449,8 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 message = Message(
                     sender_type=SenderType.SYSTEM,
                     message_type="asking_sites",  # Custom message type
-                    content="Asking " + top_sites_str,
-                    conversation_id=(
-                        self.handler.conversation_id
-                        if hasattr(self.handler, "conversation_id")
-                        else None
-                    ),
+                    content=top_sites_str,
+                    conversation_id=self.handler.conversation_id if hasattr(self.handler, 'conversation_id') else None
                 )
                 asyncio.create_task(self.handler.send_message(message.to_dict()))
                 self.handler.sites_in_embeddings_sent = True
@@ -496,6 +460,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
 
     async def do(self):
         logger.info(f"Starting ranking process with {len(self.items)} items")
+        logger.info(f"Processing {len(self.items)} items for ranking")
         tasks = []
         for url, json_str, name, site in self.items:
             if (
@@ -530,41 +495,32 @@ The user's question is: {request.query}. The item's description is {item.descrip
         ):
             logger.info("Fast track aborted after ranking tasks completed")
             return
+    
+        # Use min_score from handler if available, otherwise default to 51
+        min_score_threshold = getattr(self.handler, 'min_score', 51)
+        # Use max_results from handler if available, otherwise use NUM_RESULTS_TO_SEND
+        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
+        filtered = [r for r in self.rankedAnswers if r['ranking']['score'] > min_score_threshold]
+        ranked = sorted(filtered, key=lambda x: x['ranking']["score"], reverse=True)
+        self.handler.final_ranked_answers = ranked[:max_results]
 
-        filtered = [
-            r for r in self.rankedAnswers if r["ranking"]["score"] > self.scoreThreshold
-        ]
-        ranked = sorted(filtered, key=lambda x: x["ranking"]["score"], reverse=True)
-        self.handler.final_ranked_answers = ranked[: self.NUM_RESULTS_TO_SEND]
+        logger.info(f"Filtered to {len(filtered)} results with score > {min_score_threshold}")
+        logger.info(f"Filtered {len(self.rankedAnswers)} results to {len(filtered)} with score > {min_score_threshold}, returning top {len(self.handler.final_ranked_answers)}")
+        logger.debug(f"Top 3 results: {[(r['name'], r['ranking']['score']) for r in ranked[:3]]}")
 
-        logger.info(
-            f"Filtered to {len(filtered)} results with score > {self.scoreThreshold}"
-        )
-        logger.debug(
-            f"Top 3 results: {[(r['name'], r['ranking']['score']) for r in ranked[:3]]}"
-        )
-
-        results = [r for r in self.rankedAnswers if r["sent"] == False]
-        if self.num_results_sent > self.NUM_RESULTS_TO_SEND:
-            logger.info(
-                f"Already sent {self.num_results_sent} results, returning without sending more"
-            )
+        results = [r for r in self.rankedAnswers if r['sent'] == False]
+        if (self.num_results_sent > max_results):
+            logger.info(f"Already sent {self.num_results_sent} results, returning without sending more")
             return
 
         # Sort by score in descending order
-        sorted_results = sorted(
-            results, key=lambda x: x["ranking"]["score"], reverse=True
-        )
-        good_results = [
-            x for x in sorted_results if x["ranking"]["score"] > self.scoreThreshold
-        ]
+        sorted_results = sorted(results, key=lambda x: x['ranking']["score"], reverse=True)
+        good_results = [x for x in sorted_results if x['ranking']["score"] > min_score_threshold]
 
         # Calculate how many more results we can send
-        remaining_slots = self.NUM_RESULTS_TO_SEND - self.num_results_sent
+        remaining_slots = max_results - self.num_results_sent
         if remaining_slots <= 0:
-            logger.info(
-                f"Already sent {self.num_results_sent} results, at or above limit of {self.NUM_RESULTS_TO_SEND}"
-            )
+            logger.info(f"Already sent {self.num_results_sent} results, at or above limit of {max_results}")
             return
 
         if len(good_results) >= remaining_slots:

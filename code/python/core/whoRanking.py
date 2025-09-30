@@ -25,10 +25,10 @@ class WhoRanking:
     EARLY_SEND_THRESHOLD = 59
     NUM_RESULTS_TO_SEND = 10
 
-    def __init__(self, handler, items, level="high"):
+    def __init__(self, handler, items, level="low"):
         logger.info(f"Initializing WHO Ranking with {len(items)} items")
         self.handler = handler
-        self.level = level  # Always use high level for WHO ranking
+        self.level = level  # default to high level for WHO ranking
         self.items = items
         self.num_results_sent = 0
         self.rankedAnswers = []
@@ -86,6 +86,8 @@ class WhoRanking:
         """Construct the WHO ranking prompt with the given query and site description."""
         prompt = f"""Assign a score between 0 and 100 to the following site based 
         the likelihood that the site will contain an answer to the user's question.
+        If the user is looking to buy a product, the site should sell the product, not 
+        just have useful information. 
 
 The user's question is: {query}
 
@@ -119,6 +121,7 @@ The site's description is: {site_description}
                     ans_struc,
                     level=self.level,
                     query_params=self.handler.query_params,
+                    timeout=90,
                 )
 
             # Ensure ranking has required fields (handle LLM failures/timeouts)
@@ -234,8 +237,7 @@ The site's description is: {site_description}
 
     async def do(self):
         """Main execution method - rank all sites concurrently."""
-        logger.info(f"Starting WHO ranking process with {len(self.items)} sites")
-
+        
         # Create tasks for all sites
         tasks = []
         for url, json_str, name, site in self.items:
@@ -248,20 +250,19 @@ The site's description is: {site_description}
             logger.error(f"Error during ranking tasks: {str(e)}")
 
         # Filter and sort final results
-        filtered = [
-            r
-            for r in self.rankedAnswers
-            if r.get("ranking", {}).get("score", 0) > self.scoreThreshold
-        ]
-        ranked = sorted(
-            filtered, key=lambda x: x.get("ranking", {}).get("score", 0), reverse=True
-        )
-        self.handler.final_ranked_answers = ranked[: self.NUM_RESULTS_TO_SEND]
-
-        logger.error(
-            f"Filtered to {len(filtered)} results with score > {self.scoreThreshold}"
-        )
-
+        filtered = [r for r in self.rankedAnswers if r.get('ranking', {}).get('score', 0) > self.scoreThreshold]
+        ranked = sorted(filtered, key=lambda x: x.get('ranking', {}).get("score", 0), reverse=True)
+        self.handler.final_ranked_answers = ranked[:self.NUM_RESULTS_TO_SEND]
+        
+        print(f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {self.scoreThreshold} ===")
+        
+        # Print the ranked sites with scores
+        print("\nRanked sites (top 10):")
+        for i, r in enumerate(ranked[:self.NUM_RESULTS_TO_SEND], 1):
+            score = r.get('ranking', {}).get('score', 0)
+            print(f"  {i}. {r['name']} - Score: {score}")
+        print("=" * 60)
+        
         # Final ranked results processed
 
         # Send any remaining results that haven't been sent

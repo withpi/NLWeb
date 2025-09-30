@@ -211,11 +211,11 @@ class StatisticsHandler():
         for (template_id, score, extracted_values) in results:
             template = next((t for t in self.templates if t['id'] == template_id), None)
             if template:
-                all_template_scores.append((score, template_id, template['pattern']))
+                all_template_scores.append((score, template_id, template['pattern'], extracted_values))
         
         all_template_scores.sort(reverse=True)
-        for i, (score, tid, pattern) in enumerate(all_template_scores[:3]):
-            print(f"  {i+1}. Template {tid}: {score} - '{pattern}'")
+        for i, (score, tid, pattern, extracted_values) in enumerate(all_template_scores[:3]):
+            print(f"  {i+1}. Template {tid}: {score} - '{pattern}' '{extracted_values}'")
         
         return matched_templates
     
@@ -280,13 +280,15 @@ class StatisticsHandler():
             
             # Create async task for LLM call
             async def get_place_dcid(place=place, prompt=prompt):
-
-                response = await ask_llm(prompt, {"dcid": "string"}, level="low")
+                response = await ask_llm(prompt, {"dcid": "string"}, level="low", query_params=self.handler.query_params)
                 dcid = response.get('dcid', '') if isinstance(response, dict) else str(response).strip()
                 
                 # Fallback to simple heuristic if LLM fails
                 if not dcid or dcid == "UNKNOWN":
-                    if "county" in place.lower():
+                    if "us counties" in place.lower():
+                        # For generic "US counties", return country/USA
+                        dcid = "country/USA"
+                    elif "county" in place.lower():
                         place_name = place.lower().replace(" county", "").strip()
                         dcid = f"geoId/{place_name}"
                     else:
@@ -472,6 +474,11 @@ class StatisticsHandler():
             if not variable_dcids:
                 print(f"  Template {template['id']} - Skipping - no variables extracted")
                 return None
+
+            # Default to US if no places extracted
+            if not place_dcids:
+                place_dcids = ['country/USA']
+                print(f"  Template {template['id']} - Defaulting to US for place")
             
             # Step 4: Determine visualization type
             template_hints = template.get('visualization_hints', [])

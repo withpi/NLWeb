@@ -9,8 +9,9 @@ import asyncio
 
 logger = get_configured_logger("who_handler")
 
+DEFAULT_NLWEB_ENDPOINT = "https://nlwm.azurewebsites.net/ask"
 
-class WhoHandler(NLWebHandler):
+class WhoHandler (NLWebHandler) :
 
     def __init__(self, query_params, http_handler):
         # Remove site parameter - we'll use nlweb_sites
@@ -23,6 +24,27 @@ class WhoHandler(NLWebHandler):
             del query_params["prev"]
         # Keep prev_queries for context if provided
         super().__init__(query_params, http_handler)
+    
+    def _build_nlweb_url(self, site_url, site_type=None):
+        """Helper function to build the complete NLWEB URL with all parameters."""
+        from urllib.parse import quote
+
+        params = []
+        params.append(f"site={site_url}")
+
+        # Add the user's query
+        if self.query:
+            params.append(f"query={quote(self.query)}")
+
+        # Check if it's a Shopify site and add db parameter
+        if site_type in ['ShopifyStore', 'Shopify'] or 'shopify' in site_url.lower():
+            params.append("db=shopify_mcp")
+
+        # Add tool parameter to go directly to search
+        params.append("tool=search")
+
+        # Construct the full URL
+        return f"{DEFAULT_NLWEB_ENDPOINT}?{'&'.join(params)}"
 
     async def send_message(self, message):
         """Override send_message to ensure URLs point to /ask endpoint with site parameter."""
@@ -34,18 +56,17 @@ class WhoHandler(NLWebHandler):
                     if "url" in result:
                         url = result["url"]
                         # If URL doesn't start with http:// or https://, convert to /ask endpoint
-                        if not url.startswith(("http://", "https://")):
-                            # Use the URL value as the site parameter for /ask endpoint
-                            result["url"] = f"http://localhost:8000/ask?site={url}"
-                            logger.debug(
-                                f"Modified URL from '{url}' to '{result['url']}'"
-                            )
+                        if not url.startswith(('http://', 'https://')):
+                            site_type = result.get('@type', '')
+                            result['url'] = self._build_nlweb_url(url, site_type)
+                            logger.debug(f"Modified URL from '{url}' to '{result['url']}'")
 
             # Handle single result messages
-            elif "url" in message:
-                url = message["url"]
-                if not url.startswith(("http://", "https://")):
-                    message["url"] = f"http://localhost:8000/ask?site={url}"
+            elif 'url' in message:
+                url = message['url']
+                if not url.startswith(('http://', 'https://')):
+                    site_type = message.get('@type', '')
+                    message['url'] = self._build_nlweb_url(url, site_type)
                     logger.debug(f"Modified URL from '{url}' to '{message['url']}'")
 
         # Call parent class's send_message with modified message
@@ -64,17 +85,29 @@ class WhoHandler(NLWebHandler):
                 self.query,
                 site="nlweb_sites",  # Use the sites collection
                 query_params=self.query_params,
-                num_results=50,
+                num_results=25
             )
             self.final_retrieved_items = items
-            logger.info(f"Who ranking retrieved {len(items)} items from nlweb_sites")
-
-            logger.debug(
-                f"Who retrieval complete: {len(self.final_retrieved_items)} items retrieved"
-            )
-
+            print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
+            
+            # Print just the site names
+            print("\nRetrieved sites:")
+            site_names = []
+            for item in items:
+                if isinstance(item, tuple) and len(item) >= 3:
+                    name = item[2]  # name is the third element
+                    site_names.append(name)
+            
+            # Print unique site names
+            unique_sites = sorted(set(site_names))
+            for i, name in enumerate(unique_sites, 1):
+                print(f"  {i}. {name}")
+            print("=" * 60)
+            
+            logger.debug(f"Who retrieval complete: {len(self.final_retrieved_items)} items retrieved")
+            
             # Use simplified WHO ranking - no decontextualization needed
-            self.ranker = WhoRanking(self, self.final_retrieved_items, level="high")
+            self.ranker = WhoRanking(self, self.final_retrieved_items)
             await self.ranker.do()
 
             logger.info("Who ranking completed")

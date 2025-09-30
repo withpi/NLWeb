@@ -24,15 +24,12 @@ class ConversationManager {
   async loadConversations(selectedSite, elements) {
     // Load conversations from IndexedDB
     // Server is only contacted when joining via share link
-    // Note: selectedSite parameter is kept for backward compatibility but not used
-    // All conversations are shown regardless of selected site
-    await this.loadLocalConversations();
+    await this.loadLocalConversations(selectedSite);
   }
 
-  async loadLocalConversations() {
-   
+  async loadLocalConversations(selectedSite = null) {
     this.conversations = [];
-    
+
     try {
       // Load all messages from IndexedDB
       const allMessages = await this.storage.getAllMessages();
@@ -68,7 +65,10 @@ class ConversationManager {
             const msgQuery = msg.content?.query;
             if (msgSite) conversationMap[convId].site = msgSite;
             if (msgMode) conversationMap[convId].mode = msgMode;
-            if (msgQuery) conversationMap[convId].title = msgQuery.substring(0, 50);
+            // Use the query as title if available
+            if (msgQuery && msgQuery !== '') {
+              conversationMap[convId].title = msgQuery.substring(0, 50);
+            }
           }
           // Update timestamp to be the latest message
           if (msg.timestamp > conversationMap[convId].timestamp) {
@@ -90,8 +90,9 @@ class ConversationManager {
         
         // Sort conversations by timestamp (most recent first)
         conversations.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        
-        this.conversations = conversations;
+
+        // Filter by site if specified
+        this.conversations = selectedSite ? conversations.filter(c => c.site === selectedSite) : conversations;
     } catch (e) {
       console.error('Error loading conversations from IndexedDB:', e);
       this.conversations = [];
@@ -124,13 +125,12 @@ class ConversationManager {
               msg.conversation_id = conv.id;
             }
             
-            // Use the message_id from the server - no generation needed
+            // Only save messages that have IDs
             if (!msg.message_id) {
-              console.warn('Message missing message_id from server:', msg);
-              // Fallback to a simple ID if server didn't provide one
-              msg.message_id = `${conv.id}_${msg.timestamp || Date.now()}`;
+              // Skip messages without IDs (like 'complete' messages)
+              continue;
             }
-            
+
             // Convert to Message object before saving
             const messageObj = Message.fromDict(msg);
             messagesToSave.push(messageObj);
@@ -389,13 +389,13 @@ class ConversationManager {
   updateConversationsList(chatInterface, container = null) {
     // Use provided container or try to find the conversations list element
     const targetContainer = container || document.getElementById('conversations-list');
-    
+
     if (!targetContainer) {
       return;
     }
-    
+
     targetContainer.innerHTML = '';
-    
+
     // Filter conversations
     const conversationsWithContent = this.conversations.filter(conv => {
       // Must have an ID
@@ -435,34 +435,46 @@ class ConversationManager {
     sites.forEach(site => {
       const conversations = conversationsBySite[site];
       
+      // Check if this is a dropdown container (which only shows one site)
+      const isDropdown = container && container.classList.contains('nlweb-dropdown-conversations-list');
+
       // Create site group wrapper
       const siteGroup = document.createElement('div');
       siteGroup.className = 'site-group';
-      
-      // Create site header
-      const siteHeader = document.createElement('div');
-      siteHeader.className = 'site-group-header';
-      
-      // Add site name (cleaned up for display)
-      const siteName = document.createElement('span');
-      siteName.textContent = this.cleanSiteName(site);
-      siteHeader.appendChild(siteName);
-      
-      // Add chevron icon
-      const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      chevron.setAttribute('class', 'chevron');
-      chevron.setAttribute('viewBox', '0 0 24 24');
-      chevron.setAttribute('fill', 'none');
-      chevron.setAttribute('stroke', 'currentColor');
-      chevron.setAttribute('stroke-width', '2');
-      chevron.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
-      siteHeader.appendChild(chevron);
-      
-      siteGroup.appendChild(siteHeader);
-      
+
       // Create conversations container for this site
       const conversationsContainer = document.createElement('div');
       conversationsContainer.className = 'site-conversations';
+
+      // Only show site header if not in dropdown
+      if (!isDropdown) {
+        // Create site header
+        const siteHeader = document.createElement('div');
+        siteHeader.className = 'site-group-header';
+
+        // Add site name (cleaned up for display)
+        const siteName = document.createElement('span');
+        siteName.textContent = this.cleanSiteName(site);
+        siteHeader.appendChild(siteName);
+
+        // Add chevron icon
+        const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        chevron.setAttribute('class', 'chevron');
+        chevron.setAttribute('viewBox', '0 0 24 24');
+        chevron.setAttribute('fill', 'none');
+        chevron.setAttribute('stroke', 'currentColor');
+        chevron.setAttribute('stroke-width', '2');
+        chevron.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+        siteHeader.appendChild(chevron);
+
+        siteGroup.appendChild(siteHeader);
+
+        // Add click handler to toggle conversations visibility
+        siteHeader.addEventListener('click', () => {
+          conversationsContainer.classList.toggle('collapsed');
+          siteHeader.classList.toggle('collapsed');
+        });
+      }
       
       // Sort conversations by timestamp (most recent first)
       conversations.sort((a, b) => b.timestamp - a.timestamp);
@@ -506,12 +518,6 @@ class ConversationManager {
       
       siteGroup.appendChild(conversationsContainer);
       targetContainer.appendChild(siteGroup);
-      
-      // Add click handler to toggle conversations visibility
-      siteHeader.addEventListener('click', () => {
-        conversationsContainer.classList.toggle('collapsed');
-        siteHeader.classList.toggle('collapsed');
-      });
     });
   }
 

@@ -153,9 +153,9 @@ class Message:
         sender_type = data.get("sender_type", "user")
         message_type = data.get("message_type", "query")
         
-        # If content is a dict with 'query' field and sender is user, treat as UserQuery
-        if isinstance(content, dict) and "query" in content and sender_type == "user":
-            content = UserQuery.from_dict(content)
+        # Keep content as dict to preserve all parameters
+        # We don't convert to UserQuery anymore because it loses extra fields like 'db'
+        # The dict already has everything we need
         
         # Convert string types to enums if valid
         if isinstance(sender_type, str):

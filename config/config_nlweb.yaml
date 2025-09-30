@@ -33,14 +33,14 @@ required_info_enabled: true
 
 # Enable or disable aggregation functionality
 # When set to false, the system will not perform aggregation operations
-aggregation_enabled: false
+aggregation_enabled: true
 
 # Enable or disable the who endpoint
 # When set to false, the system will not make requests to the who endpoint
 who_endpoint_enabled: true
 
 # Endpoint for /who requests to get relevant sites
-who_endpoint: "https://whotoask.azurewebsites.net/who"
+who_endpoint: "http://localhost:8000/who"
 
 # Headers for HTTP requests
 headers:

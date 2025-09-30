@@ -181,7 +181,91 @@ class NLWebParticipant(BaseParticipant):
             "human_messages": config.human_messages_context,
             "nlweb_messages": config.nlweb_messages_context
         })
-    
+
+    def _extract_query_texts(self, prev_queries):
+        """
+        Extract just the query text from previous queries.
+        Handles both simple string lists and complex nested structures.
+        """
+        if not prev_queries:
+            return []
+
+        query_texts = []
+
+        for item in prev_queries:
+            if isinstance(item, str):
+                query_texts.append(item)
+            elif isinstance(item, dict):
+                # Extract query from dict structure
+                if 'query' in item:
+                    if isinstance(item['query'], dict) and 'query' in item['query']:
+                        query_texts.append(item['query']['query'])
+                    elif isinstance(item['query'], str):
+                        query_texts.append(item['query'])
+            elif isinstance(item, list):
+                # Recursively extract from list
+                query_texts.extend(self._extract_query_texts(item))
+
+        return query_texts
+
+    def _extract_query_params(self, message):
+        """
+        Extract query parameters from a message object.
+
+        Args:
+            message: ChatMessage object with content
+
+        Returns:
+            Dictionary of query parameters for NLWebHandler
+        """
+        import json
+
+        # Debug: Print entire message
+        print(f"\n=== EXTRACT_QUERY_PARAMS DEBUG ===")
+        print(f"Full message object: {message}")
+        if hasattr(message, '__dict__'):
+            print(f"Message attributes: {message.__dict__}")
+            # Check if there are any additional fields at message level
+            for key, value in message.__dict__.items():
+                if key not in ['message_id', 'sender_type', 'message_type', 'conversation_id',
+                              'timestamp', 'content', 'sender_info', 'metadata']:
+                    print(f"Extra field at message level: {key}={value}")
+
+        query_params = {}
+
+        # Get content from message
+        content = message.content if hasattr(message, 'content') else {}
+        print(f"Extracted content: {content}")
+        print(f"Content type: {type(content)}")
+
+        if isinstance(content, dict):
+            # Add all parameters from content
+            for key, value in content.items():
+                if key == 'prev_queries':
+                    # Special case: Extract just the query texts from prev_queries
+                    query_texts = self._extract_query_texts(value)
+                    query_params["prev"] = query_texts  # Pass as list of strings
+                else:
+                    # All other parameters pass through as-is (including 'db', 'query', 'site', 'mode', etc.)
+                    query_params[key] = [value] if not isinstance(value, list) else value
+
+        # Extract user info from sender_info
+        if hasattr(message, 'sender_info') and message.sender_info:
+            query_params["user_id"] = [message.sender_info.get('id', '')]
+            query_params["oauth_id"] = [message.sender_info.get('id', '')]
+
+        # Add conversation tracking
+        if hasattr(message, 'conversation_id') and message.conversation_id:
+            query_params["conversation_id"] = [message.conversation_id]
+
+        # Add streaming flag (always true for WebSocket/chat)
+        query_params["streaming"] = ["true"]
+
+        print(f"Final query_params: {query_params}")
+        print(f"=== END EXTRACT_QUERY_PARAMS DEBUG ===\n")
+
+        return query_params
+
     async def process_message(
         self, 
         message: Message, 
@@ -204,13 +288,13 @@ class NLWebParticipant(BaseParticipant):
             # Track if we've sent any response
             response_sent = False
             conversation_id = message.conversation_id
-            websocket_manager = stream_callback  # stream_callback is the websocket manager
+            websocket_manager = stream_callback  # stream_callback can be websocket manager or SSE wrapper
             
             class ChunkCapture:
                 async def write_stream(self, data, end_response=False):
                     nonlocal response_sent
                     
-                    # Stream directly to WebSocket if we have a manager (async)
+                    # Stream directly if we have a manager/wrapper (async)
                     if websocket_manager:
                         response_sent = True
                         
@@ -219,10 +303,12 @@ class NLWebParticipant(BaseParticipant):
                         asyncio.create_task(websocket_manager.broadcast_message(conversation_id, data))
             
             chunk_capture = ChunkCapture()
-            
-            # Use the new class method to create handler from message
-            # This encapsulates all message parsing logic within NLWebHandler
-            handler = self.nlweb_handler.from_message(message, chunk_capture)
+
+            # Extract query parameters from message
+            query_params = self._extract_query_params(message)
+
+            # Create handler directly with query_params
+            handler = self.nlweb_handler(query_params, chunk_capture)
             results = await handler.runQuery()
             
             # If we streamed the response, create a message for storage

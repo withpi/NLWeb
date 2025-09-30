@@ -212,21 +212,39 @@
         transform: scale(1.2);
       }
     }
+
+    .sample-queries-list {
+      padding: 30px;
+    }
+
+    .sample-query-item {
+      padding: 10px 0;
+      color: #666;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: color 0.2s;
+      line-height: 1.6;
+    }
+
+    .sample-query-item:hover {
+      color: #7c4a3a;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <div class="app-container">
     <div class="header">
-      <h1>NLWeb Who Query</h1>
+      <h1>Agent Finder</h1>
       <p>Find out who can help with your query</p>
     </div>
 
     <div class="query-section">
       <div class="query-input-wrapper">
-        <input 
-          type="text" 
-          class="query-input" 
-          id="queryInput" 
+        <input
+          type="text"
+          class="query-input"
+          id="queryInput"
           placeholder="Enter your query..."
           autocomplete="off"
         >
@@ -236,9 +254,7 @@
 
     <div class="results-section">
       <div class="results-container" id="resultsContainer">
-        <div class="no-results">
-          Enter a query above to find who can help
-        </div>
+        <!-- Sample queries will be loaded here dynamically from sample-queries.js -->
       </div>
     </div>
   </div>
@@ -247,28 +263,49 @@
   <script type="module">
     import { ChatUICommon } from '/static/chat-ui-common.js';
     import { JsonRenderer } from '/static/json-renderer.js';
-    
+    import { SAMPLE_QUERIES } from '/static/sample-queries.js';
+
     class WhoQueryInterface {
       constructor() {
         this.queryInput = document.getElementById('queryInput');
         this.queryButton = document.getElementById('queryButton');
         this.resultsContainer = document.getElementById('resultsContainer');
-        
+
         this.isProcessing = false;
         this.eventSource = null;
         this.allResults = []; // Accumulate all results for re-sorting
         this.aiResponses = []; // Keep AI responses separate
         this.queryHistory = []; // Track query history for context
-        
+
         // Initialize UI helper
         this.uiHelper = new ChatUICommon({
           messagesContainer: this.resultsContainer
         });
-        
+
         // Initialize JsonRenderer for consistent item display (with scores shown for WHO results)
         this.jsonRenderer = new JsonRenderer({ showScores: true });
-        
+
+        // Initialize sample queries from imported array
+        this.initializeSampleQueries();
+
         this.initializeEventListeners();
+      }
+
+      initializeSampleQueries() {
+        // Generate the sample queries HTML from the imported array
+        const sampleQueriesHtml = `
+          <div class="sample-queries-list">
+            <p style="color: #999; margin-bottom: 16px; font-size: 0.9rem;">Try these example queries:</p>
+            ${SAMPLE_QUERIES.map(query => `
+              <div class="sample-query-item" data-query="${query}">
+                ${query.charAt(0).toUpperCase() + query.slice(1)}
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        // Set the initial content of results container
+        this.resultsContainer.innerHTML = sampleQueriesHtml;
       }
 
       initializeEventListeners() {
@@ -278,6 +315,15 @@
             e.preventDefault();
             this.handleQuery();
           }
+        });
+
+        // Add click handlers for sample query items
+        document.querySelectorAll('.sample-query-item').forEach(item => {
+          item.addEventListener('click', () => {
+            const query = item.getAttribute('data-query');
+            this.queryInput.value = query;
+            this.handleQuery();
+          });
         });
       }
 
@@ -582,37 +628,64 @@
           // Modify links to point to index.html with the site parameter
           // Look for the url field in the item (this contains the actual site domain)
           if (item.url) {
-            // Extract just the domain name from the URL
-            let siteDomain = item.url;
-            // Remove protocol if present
-            siteDomain = siteDomain.replace(/^https?:\/\//, '');
-            // Remove www. if present
-            siteDomain = siteDomain.replace(/^www\./, '');
-            // Remove trailing slash if present
-            siteDomain = siteDomain.replace(/\/$/, '');
-            
-            // Get the friendly name for display
-            const siteName = item.name || item.siteName || siteDomain;
-            
-            // Check if this is a Shopify store based on the @type field
-            // Don't rely on URL since Shopify stores can have custom domains
-            const isShopify = item['@type'] === 'ShopifyStore' || item.type === 'ShopifyStore';
-            
-            // Build the URL with parameters
-            let indexUrl = `/static/index.html?site=${encodeURIComponent(siteDomain)}`;
-            if (isShopify) {
-              // Add retrieval_backend parameter to force Shopify MCP retrieval
-              indexUrl += '&retrieval_backend=shopify';
+            // Check if the URL from backend is already a complete URL (e.g., to nlwm.azurewebsites.net)
+            // If so, use it directly without modification
+            let indexUrl;
+            const siteName = item.name || item.siteName || item.url;
+
+            if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
+              // URL is already complete from backend - replace /ask? with /?
+              indexUrl = item.url.replace('/ask?', '/?');
+            } else {
+              // URL is just a domain - build local index URL
+              let siteDomain = item.url;
+              // Remove www. if present
+              siteDomain = siteDomain.replace(/^www\./, '');
+              // Remove trailing slash if present
+              siteDomain = siteDomain.replace(/\/$/, '');
+
+              // Check if this is a Shopify store based on the @type field
+              // Don't rely on URL since Shopify stores can have custom domains
+              const isShopify = item['@type'] === 'ShopifyStore' || item.type === 'ShopifyStore';
+
+              // Build the URL with parameters
+              indexUrl = `/?site=${encodeURIComponent(siteDomain)}`;
+
+              // Add the current query (the one the user searched with)
+              const currentQuery = this.queryInput.value.trim();
+              if (currentQuery) {
+                indexUrl += `&query=${encodeURIComponent(currentQuery)}`;
+              }
+
+              // Add site-specific query if different from main query
+              if (item.query && item.query !== currentQuery) {
+                // Store site-specific query as a separate parameter
+                indexUrl += `&site_query=${encodeURIComponent(item.query)}`;
+              }
+
+              // Add retrieval/backend parameter if needed
+              if (isShopify) {
+                // Add retrieval parameter to force Shopify MCP retrieval
+                indexUrl += '&retrieval=shopify';
+              }
+
+              // Add tool parameter to skip tool selection
+              indexUrl += '&tool=search';
+
+              // Add any database parameter if present
+              if (item.db || item.database) {
+                indexUrl += `&db=${encodeURIComponent(item.db || item.database)}`;
+              }
             }
-            
+
             // Find all links in the element
             const links = itemElement.querySelectorAll('a');
             links.forEach(link => {
-              // If it's a link to the site, modify it to go to index.html
+              // If it's a link to the site, modify it
               if (link.href && !link.href.startsWith('mailto:') && !link.href.startsWith('tel:')) {
-                // Create new link to index.html with site parameter using the domain
+                // Use the URL we determined above
                 link.href = indexUrl;
-                link.target = '_blank'; // Open in new tab
+                link.target = '_blank'; // Open in new tab/window
                 link.title = `Open chat with ${siteName}`;
               }
             });
@@ -621,7 +694,7 @@
             if (titleElement && !titleElement.querySelector('a')) {
               const titleLink = document.createElement('a');
               titleLink.href = indexUrl;
-              titleLink.target = '_blank';
+              titleLink.target = '_blank'; // Open in new tab/window
               titleLink.title = `Open chat with ${siteName}`;
               titleLink.style.cssText = 'color: inherit; text-decoration: none;';
               titleLink.innerHTML = titleElement.innerHTML;

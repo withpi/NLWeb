@@ -215,6 +215,7 @@
 
   <script type="module">
     import { UnifiedChatInterface } from '/static/chat-interface-unified.js';
+    import { SITE_SAMPLE_QUERIES } from '/static/site-sample-queries.js';
     
     // Parse ALL URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -233,9 +234,11 @@
     }
     
     // Initialize chat interface with connection type and additional parameters
-    new UnifiedChatInterface({ 
+    new UnifiedChatInterface({
       connectionType: connectionType,
-      additionalParams: additionalParams
+      additionalParams: additionalParams,
+      preloadStorage: true,  // Enable IndexedDB preloading for full page
+      sampleQueries: SITE_SAMPLE_QUERIES  // Pass sample queries configuration
     });
   </script>
   <script src="/static/oauth-login.js"></script>

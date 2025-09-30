@@ -6,6 +6,7 @@
     <title>NLWeb Dropdown Chat - Integration Example</title>
     
     <!-- Include the dropdown chat CSS -->
+    <link rel="stylesheet" href="common-chat-styles.css">
     <link rel="stylesheet" href="nlweb-dropdown-chat.css">
     
     <!-- Page-specific styles -->
@@ -331,12 +332,12 @@
         
         window.clearConsole = function() {
             consoleOutput.innerHTML = '';
-            console.info('Console cleared');
+            addToConsole('INFO', 'Console cleared');
         };
         
         window.checkStatus = function() {
             if (window.nlwebChat) {
-                console.info('Chat instance found:', {
+                addToConsole('INFO', 'Chat instance found:', {
                     container: !!window.nlwebChat.container,
                     searchInput: !!window.nlwebChat.searchInput,
                     dropdownResults: !!window.nlwebChat.dropdownResults,
@@ -347,7 +348,7 @@
                 });
                 setStatus('✓ Chat instance is active', 'success');
             } else {
-                console.error('Chat instance not found');
+                addToConsole('ERROR', 'Chat instance not found');
                 setStatus('✗ Chat instance not found', 'error');
             }
         };
@@ -355,12 +356,12 @@
         window.testSearch = function() {
             if (window.nlwebChat && window.nlwebChat.searchInput) {
                 const testQuery = 'chocolate cake recipe';
-                console.info(`Testing search with query: "${testQuery}"`);
+                addToConsole('INFO', `Testing search with query: "${testQuery}"`);
                 window.nlwebChat.searchInput.value = testQuery;
                 window.nlwebChat.handleSearch();
                 setStatus('Test search initiated', 'info');
             } else {
-                console.error('Cannot test search - chat not initialized');
+                addToConsole('ERROR', 'Cannot test search - chat not initialized');
                 setStatus('Cannot test search - chat not initialized', 'error');
             }
         };
@@ -369,10 +370,14 @@
         async function initializeDropdownChat() {
             try {
                 setStatus('Loading NLWebDropdownChat module...', 'info');
-                console.log('Starting initialization...');
+
+                // Check if container exists before import
+                const container = document.getElementById('recipe-search-container');
+                if (!container) {
+                    throw new Error('Container element not found');
+                }
                 
                 const { NLWebDropdownChat } = await import('./nlweb-dropdown-chat.js');
-                console.log('Module loaded successfully');
                 
                 setStatus('Creating chat instance...', 'info');
                 
@@ -381,33 +386,29 @@
                     containerId: 'recipe-search-container',
                     site: 'seriouseats',
                     placeholder: 'Search for recipes...',
-                    endpoint: window.location.origin
+                    endpoint: window.location.origin,
+                    inputId: 'recipe-chat-input'  // Optional: specify a custom input ID
                 });
-                
-                console.log('Chat instance created');
                 
                 // Make it available for debugging
                 window.nlwebChat = chat;
                 
-                // Wait for full initialization
-                setTimeout(() => {
+                // Monitor initialization progress
+                let checkCount = 0;
+                const checkInterval = setInterval(() => {
+                    checkCount++;
+
                     if (chat.chatInterface) {
+                        clearInterval(checkInterval);
                         setStatus('✓ Dropdown chat initialized successfully!', 'success');
-                        console.info('Chat interface ready:', {
-                            conversationManager: !!chat.chatInterface.conversationManager,
-                            currentConversationId: chat.chatInterface.currentConversationId,
-                            selectedSite: chat.chatInterface.selectedSite
-                        });
-                    } else {
-                        setStatus('⚠ Chat interface initialization pending...', 'warning');
-                        console.warn('Chat interface not yet initialized');
+                    } else if (checkCount >= 20) { // Stop after 10 seconds
+                        clearInterval(checkInterval);
+                        setStatus('✗ Chat interface failed to initialize after 10 seconds', 'error');
                     }
-                }, 2000);
+                }, 500);
                 
             } catch (error) {
                 setStatus(`✗ Failed to initialize: ${error.message}`, 'error');
-                console.error('Initialization error:', error);
-                console.error('Stack trace:', error.stack);
             }
         }
         
