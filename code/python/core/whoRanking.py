@@ -131,13 +131,15 @@ The site's description is: {site_description}
 
     async def sendAnswers(self, answers, force=False):
         """Send ranked sites to the client."""
+        # Get max_results from handler, or use default
+        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
         json_results = []
 
         for result in answers:
             # Stop if we've already sent enough
-            if self.num_results_sent + len(json_results) >= self.NUM_RESULTS_TO_SEND:
+            if self.num_results_sent + len(json_results) >= max_results:
                 logger.info(
-                    f"Stopping at {len(json_results)} results to avoid exceeding limit of {self.NUM_RESULTS_TO_SEND}"
+                    f"Stopping at {len(json_results)} results to avoid exceeding limit of {max_results}"
                 )
                 break
 
@@ -170,7 +172,7 @@ The site's description is: {site_description}
             await create_assistant_result(json_results, handler=self.handler)
             self.num_results_sent += len(json_results)
             logger.info(
-                f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{self.NUM_RESULTS_TO_SEND}"
+                f"Sent {len(json_results)} results, total sent: {self.num_results_sent}/{max_results}"
             )
 
     async def do(self):
@@ -200,7 +202,7 @@ The site's description is: {site_description}
 
         # Print the ranked sites with scores
         print("\nRanked sites (top 10):")
-        for i, r in enumerate(ranked[:self.NUM_RESULTS_TO_SEND], 1):
+        for i, r in enumerate(ranked[:max_results], 1):
             score = r.get('ranking', {}).get('score', 0)
             print(f"  {i}. {r['name']} - Score: {score}")
         print("=" * 60)
