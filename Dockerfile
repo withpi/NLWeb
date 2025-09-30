@@ -43,7 +43,7 @@ RUN groupadd -r nlweb && \
     useradd -r -g nlweb -d /app -s /bin/bash nlweb
 
 # Copy application code
-COPY code/ /app/
+COPY code/ /app/code/
 COPY static/ /app/static/
 COPY config/ /app/config/
 COPY data/ /app/data/
