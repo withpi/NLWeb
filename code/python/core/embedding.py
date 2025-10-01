@@ -97,6 +97,17 @@ async def get_embedding(
             )
             logger.debug(f"OpenAI embeddings received, dimension: {len(result)}")
             return result
+        
+        if provider == "pi_labs":
+            logger.debug("Getting Pi Labs embeddings")
+            # Import here to avoid potential circular imports
+            from embedding_providers.pi_embedding import get_pi_labs_embeddings
+            result = await asyncio.wait_for(
+                get_pi_labs_embeddings(text),
+                timeout=timeout
+            )
+            logger.debug(f"Pi Labs embeddings received, dimension: {len(result)}")
+            return result
 
         if provider == "gemini":
             logger.debug("Getting Gemini embeddings")
@@ -244,6 +255,17 @@ async def batch_get_embeddings(
                 timeout=timeout
             )
             logger.debug(f"OpenAI batch embeddings received, count: {len(result)}")
+            return result
+        
+        if provider == "pi_labs":
+            # Use Pi Labs' batch embedding API
+            logger.debug("Getting Pi Labs batch embeddings")
+            from embedding_providers.pi_embedding import get_pi_labs_batch_embeddings
+            result = await asyncio.wait_for(
+                get_pi_labs_batch_embeddings(texts),
+                timeout=timeout
+            )
+            logger.debug(f"Pi Labs batch embeddings received, count: {len(result)}")
             return result
             
         if provider == "azure_openai":

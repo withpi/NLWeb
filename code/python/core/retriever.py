@@ -1081,19 +1081,19 @@ def get_vector_db_client(endpoint_name: Optional[str] = None,
     Returns:
         Configured VectorDBClient instance (cached if possible)
     """
-    global _client_cache
+    #global _client_cache
     
     # Create a cache key based on endpoint_name
     # Note: We don't include query_params in the key since they're typically the same
-    cache_key = endpoint_name or 'default'
+    #cache_key = endpoint_name or 'default'
     
     # Check if we have a cached client
-    if cache_key in _client_cache:
-        return _client_cache[cache_key]
+    #if cache_key in _client_cache:
+    #    return _client_cache[cache_key]
     
     # Create a new client and cache it
     client = VectorDBClient(endpoint_name=endpoint_name, query_params=query_params)
-    _client_cache[cache_key] = client
+    #_client_cache[cache_key] = client
     
     return client
 
@@ -1129,6 +1129,8 @@ async def search(query: str,
     # Pass handler through kwargs if provided
     if handler:
         kwargs['handler'] = handler
+    if query_params:
+        kwargs['query_params'] = query_params
     results = await client.search(query, site, num_results, **kwargs)
     
     # Send retrieval count message if handler is provided and in debug mode

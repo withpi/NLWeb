@@ -439,10 +439,10 @@ class AzureSearchClient(RetrievalClientBase):
         logger.debug(f"Retrieving by site and vector - sites: {sites}, top_n: {top_n}")
         
         # Validate embedding dimension
-        if len(vector_embedding) != 1536:
-            error_msg = f"Embedding dimension {len(vector_embedding)} not supported. Must be 1536."
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        #if len(vector_embedding) != 1536:
+        #    error_msg = f"Embedding dimension {len(vector_embedding)} not supported. Must be 1536."
+        #    logger.error(error_msg)
+        #    raise ValueError(error_msg)
         
         search_client = self._get_search_client(index_name)
         

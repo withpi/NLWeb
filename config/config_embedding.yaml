@@ -1,11 +1,15 @@
-preferred_provider: azure_openai
+preferred_provider: pi_labs
 
 providers:
   azure_openai:
     api_key_env: AZURE_OPENAI_API_KEY
     api_endpoint_env: AZURE_OPENAI_ENDPOINT
-    api_version_env: "2024-02-01"  # Specific API version for embeddings
+    api_version_env: "2024-02-01" # Specific API version for embeddings
     model: text-embedding-3-small
+
+  pi_labs:
+    api_key_env: WITHPI_API_KEY
+    model: pi-embedding
 
   elasticsearch:
     # Elasticsearch endpoint (localhost or remote URL with Elastic Cloud/Serverless)
@@ -15,7 +19,7 @@ providers:
     # Model name (inference endpoint)
     model: .multilingual-e5-small-elasticsearch
     # Service configuration
-    config: 
+    config:
       service: elasticsearch
       service_settings:
         num_allocations: 1

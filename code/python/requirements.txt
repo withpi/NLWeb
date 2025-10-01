@@ -17,6 +17,8 @@ feedparser>=6.0.1
 httpx>=0.28.1
 seaborn>=0.13.0
 openai>=1.12.0
+withpi>=1.77.0
+datasets>=4.1.1
 PyJWT>=2.8.0
 
 # Optional LLM provider dependencies

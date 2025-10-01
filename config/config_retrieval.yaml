@@ -1,8 +1,14 @@
-write_endpoint: qdrant_local
+write_endpoint: pi_nlweb
 
 endpoints:
+  pi_nlweb:
+    enabled: true
+    api_key_env: PI_AZURE_VECTOR_SEARCH_API_KEY
+    api_endpoint_env: PI_AZURE_VECTOR_SEARCH_ENDPOINT
+    index_name: embeddings1536
+    db_type: azure_ai_search
 
-#Azure endpoints
+  #Azure endpoints
   azure_ai_search:
     enabled: false
     api_key_env: AZURE_VECTOR_SEARCH_API_KEY
@@ -19,7 +25,7 @@ endpoints:
     name: NLWeb_Crawl_Backup
 
   nlweb_west:
-    enabled: true
+    enabled: false
     api_key_env: NLWEB_WEST_API_KEY
     api_endpoint_env: NLWEB_WEST_ENDPOINT
     index_name: embeddings1536
@@ -67,14 +73,14 @@ endpoints:
       index_options:
         type: int8_hnsw # byte quantization for efficient storage
 
-  # Milvus is still under development and not yet supported. 
+  # Milvus is still under development and not yet supported.
   milvus:
     enabled: false
     api_endpoint_env: MILVUS_ENDPOINT
     api_key_env: MILVUS_TOKEN
     index_name: nlweb_collection
     db_type: milvus
-  
+
   opensearch_knn:
     enabled: false
     # OpenSearch with k-NN plugin enabled (faster, native vector search)
@@ -105,7 +111,7 @@ endpoints:
     enabled: false
     # Database connection details (i.e. "postgresql://<HOST>:<PORT>/<DATABASE>?user=<USERNAME>&sslmode=require")
     api_endpoint_env: POSTGRES_CONNECTION_STRING
-    # Password for authentication 
+    # Password for authentication
     api_key_env: POSTGRES_PASSWORD
     # Index name to search in
     index_name: documents
@@ -121,7 +127,7 @@ endpoints:
     index_name: nlweb_collection
     # Specify the database type
     db_type: qdrant
-  
+
   # Option 2: Remote Qdrant server
   qdrant_url:
     enabled: false
@@ -136,7 +142,7 @@ endpoints:
 
   # Shopify MCP endpoint for product search across Shopify stores
   shopify:
-    enabled: true
+    enabled: false
     db_type: shopify_mcp
     # Note: mcp_endpoint will be dynamically set based on the site being queried
     name: Shopify MCP Search
