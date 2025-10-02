@@ -35,6 +35,13 @@ class WhoRanking:
         self.client = httpx.AsyncClient(timeout=10.0)
 
     async def piScoreItem(self, description: str) -> int:
+        try:
+            formatted_description = json.dumps(
+                json.loads(description), indent=2, ensure_ascii=False
+            )
+        except:
+            formatted_description = description
+
         resp = await self.client.post(
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
@@ -43,9 +50,11 @@ class WhoRanking:
             },
             json={
                 "llm_input": self.handler.query,
-                "llm_output": description,
+                "llm_output": formatted_description,
                 "scoring_spec": [
-                    {"question": "Is the response relevant to the input?"}
+                    {
+                        "question": "Does the response satisfy the primary intent of the input?"
+                    }
                 ],
             },
         )
@@ -189,7 +198,7 @@ The site's description is: {site_description}
     async def sendAnswers(self, answers, force=False):
         """Send ranked sites to the client."""
         json_results = []
-        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
+        max_results = getattr(self.handler, "max_results", self.NUM_RESULTS_TO_SEND)
 
         for result in answers:
             # Stop if we've already sent enough
@@ -236,7 +245,7 @@ The site's description is: {site_description}
 
     async def do(self):
         """Main execution method - rank all sites concurrently."""
-        
+
         # Create tasks for all sites
         tasks = []
         for url, json_str, name, site in self.items:
@@ -249,23 +258,31 @@ The site's description is: {site_description}
             logger.error(f"Error during ranking tasks: {str(e)}")
 
         # Use min_score from handler if available, otherwise default to 51
-        min_score_threshold = getattr(self.handler, 'min_score', 51)
+        min_score_threshold = getattr(self.handler, "min_score", 51)
         # Use max_results from handler if available, otherwise use NUM_RESULTS_TO_SEND
-        max_results = getattr(self.handler, 'max_results', self.NUM_RESULTS_TO_SEND)
+        max_results = getattr(self.handler, "max_results", self.NUM_RESULTS_TO_SEND)
 
-        filtered = [r for r in self.rankedAnswers if r.get('ranking', {}).get('score', 0) > min_score_threshold]
-        ranked = sorted(filtered, key=lambda x: x.get('ranking', {}).get("score", 0), reverse=True)
+        filtered = [
+            r
+            for r in self.rankedAnswers
+            if r.get("ranking", {}).get("score", 0) > min_score_threshold
+        ]
+        ranked = sorted(
+            filtered, key=lambda x: x.get("ranking", {}).get("score", 0), reverse=True
+        )
         self.handler.final_ranked_answers = ranked[:max_results]
 
-        print(f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ===")
+        print(
+            f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ==="
+        )
 
         # Print the ranked sites with scores
         print("\nRanked sites (top 10):")
         for i, r in enumerate(ranked[:max_results], 1):
-            score = r.get('ranking', {}).get('score', 0)
+            score = r.get("ranking", {}).get("score", 0)
             print(f"  {i}. {r['name']} - Score: {score}")
         print("=" * 60)
-        
+
         # Final ranked results processed
 
         # Send any remaining results that haven't been sent
