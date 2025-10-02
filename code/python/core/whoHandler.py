@@ -85,7 +85,7 @@ class WhoHandler (NLWebHandler) :
                 self.query,
                 site="nlweb_sites",  # Use the sites collection
                 query_params=self.query_params,
-                num_results=25 if "num" not in self.query_params else int(self.query_params["num"]),
+                num_results=100 if "num" not in self.query_params else int(self.query_params["num"]),
             )
             self.final_retrieved_items = items
             print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")

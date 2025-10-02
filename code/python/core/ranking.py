@@ -186,7 +186,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-model-override": "pi-scorer-bert:modal:https://pilabs--pi-modelserver-scorermodel-invocations.modal.run",
+                "x-model-override": "pi-scorer-bert:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
             },
             json={
                 "llm_input": self.handler.query,
