@@ -3,16 +3,22 @@
 LocalCorpus: In-memory BM25 corpus using Hugging Face datasets.
 """
 
-import sys
 from typing import List, Optional, Any, cast
 import logging
 import json
+import faiss
+import numpy as np
 
 import bm25s
 import Stemmer
 from datasets import load_dataset, Dataset
 
+from embedding_providers.azure_oai_embedding import get_azure_openai_client 
+
 logger = logging.getLogger(__name__)
+
+def normalize(x):
+    return x / np.linalg.norm(x, axis=1, keepdims=True)
 
 class LocalCorpus:
     """
@@ -63,10 +69,12 @@ class LocalCorpus:
         # Build corpus from dataset - may need adjustment based on actual schema
         self.corpus_text = []
         self.corpus_structured = []
+        self.embeddings = []
         for item in self.dataset:
             self.corpus_text.append(str(item["schema_object"]))
             json_obj = json.loads(item["schema_object"])
             self.corpus_structured.append((item["url"], item["schema_object"], json_obj["name"], "nlweb_sites"))
+        self.embeddings = normalize(np.array(self.dataset["schema_object_embedding"]))
         logger.info(f"Loaded {len(self.corpus_text)} documents")
 
     def _build_index(self) -> None:
@@ -86,8 +94,19 @@ class LocalCorpus:
         self.retriever = retriever
 
         logger.info("BM25 index built successfully")
+        
+        faiss.omp_set_num_threads(1)
 
-    def search(
+        hnsw_M = 16
+        hnsw_efConstruction = 128
+        hnsw_efSearch = 100
+        self.index = faiss.IndexHNSWFlat(1024, hnsw_M, faiss.METRIC_INNER_PRODUCT)
+        self.index.hnsw.efConstruction = hnsw_efConstruction
+        self.index.hnsw.efSearch = hnsw_efSearch
+
+        self.index.add(self.embeddings)
+
+    async def search(
         self,
         query: str,
         k: int = 10
@@ -108,13 +127,25 @@ class LocalCorpus:
         # Tokenize query
         query_tokens = bm25s.tokenize(query, stemmer=self.stemmer)
 
+        client = get_azure_openai_client()
+
+        response = await client.embeddings.create(
+            input=query,
+            model="text-embedding-3-large",
+            dimensions=1024,
+        )
+        embedding = [response.data[0].embedding]
+        query_embeddings = normalize(np.array(embedding))
+        _, embedding_results = self.index.search(np.array(query_embeddings), k=k)
+
         # Retrieve top-k results
-        results, scores = self.retriever.retrieve(query_tokens, k=k)
+        bm25_results, scores = self.retriever.retrieve(query_tokens, k=k)
+
+        results = list(set(bm25_results[0]).union(set(embedding_results[0])))
 
         # Format results
         rows = []
-        for i in range(results.shape[1]):
-            docid = int(results[0, i])
+        for docid in results:
             #score = float(scores[0, i])
             rows.append(self.corpus_structured[docid])
 

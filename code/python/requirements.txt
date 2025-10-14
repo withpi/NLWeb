@@ -87,3 +87,4 @@ qdrant-client>=1.14.0
 chroma-hnswlib>=0.7.0
 
 bm25s[full]>=0.2.14
+faiss-cpu>=1.12.0

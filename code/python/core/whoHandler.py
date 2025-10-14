@@ -91,10 +91,11 @@ class WhoHandler (NLWebHandler) :
             #sys.exit(0)
 
             # Search using the special nlweb_sites collection
-            items = await asyncio.to_thread(LOCAL_CORPUS.search,
+            items = await LOCAL_CORPUS.search(
                 str(self.query),
                 k=100 if "num" not in self.query_params else int(self.query_params["num"]),
             )
+
             self.final_retrieved_items = items
             print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
             
