@@ -3,6 +3,7 @@ from core.retriever import search
 from core.whoRanking import WhoRanking
 from misc.logger.logging_config_helper import get_configured_logger
 import asyncio
+from core.local_corpus import LOCAL_CORPUS
 
 # Who handler is work in progress for answering questions about who
 # might be able to answer a given query
@@ -80,12 +81,19 @@ class WhoHandler (NLWebHandler) :
                 "Using general search method with site=nlweb_sites for who query"
             )
 
+            #items = await search(
+            #    self.query,
+            #    site="nlweb_sites",  # Use the sites collection
+            #    query_params=self.query_params,
+            #    num_results=100 if "num" not in self.query_params else int(self.query_params["num"]),
+            #)
+            #print(items[0])
+            #sys.exit(0)
+
             # Search using the special nlweb_sites collection
-            items = await search(
-                self.query,
-                site="nlweb_sites",  # Use the sites collection
-                query_params=self.query_params,
-                num_results=100 if "num" not in self.query_params else int(self.query_params["num"]),
+            items = await asyncio.to_thread(LOCAL_CORPUS.search,
+                str(self.query),
+                k=100 if "num" not in self.query_params else int(self.query_params["num"]),
             )
             self.final_retrieved_items = items
             print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")

@@ -85,3 +85,5 @@ qdrant-client>=1.14.0
 # For HNSW (Hierarchical Navigable Small World)
 # Using ChromaDB's fork which has prebuilt Linux wheels
 chroma-hnswlib>=0.7.0
+
+bm25s[full]>=0.2.14
