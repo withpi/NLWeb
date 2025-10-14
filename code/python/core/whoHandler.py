@@ -16,7 +16,8 @@ logger = get_configured_logger("who_handler")
 
 DEFAULT_NLWEB_ENDPOINT = "https://nlwm.azurewebsites.net/ask"
 
-class WhoHandler (NLWebHandler) :
+
+class WhoHandler(NLWebHandler):
 
     def __init__(self, query_params, http_handler):
         self.client = httpx.AsyncClient(timeout=10.0)
@@ -30,7 +31,7 @@ class WhoHandler (NLWebHandler) :
             del query_params["prev"]
         # Keep prev_queries for context if provided
         super().__init__(query_params, http_handler)
-    
+
     def _build_nlweb_url(self, site_url, site_type=None):
         """Helper function to build the complete NLWEB URL with all parameters."""
         from urllib.parse import quote
@@ -43,7 +44,7 @@ class WhoHandler (NLWebHandler) :
             params.append(f"query={quote(self.query)}")
 
         # Check if it's a Shopify site and add db parameter
-        if site_type in ['ShopifyStore', 'Shopify'] or 'shopify' in site_url.lower():
+        if site_type in ["ShopifyStore", "Shopify"] or "shopify" in site_url.lower():
             params.append("db=shopify_mcp")
 
         # Add tool parameter to go directly to search
@@ -62,27 +63,30 @@ class WhoHandler (NLWebHandler) :
                     if "url" in result:
                         url = result["url"]
                         # If URL doesn't start with http:// or https://, convert to /ask endpoint
-                        if not url.startswith(('http://', 'https://')):
-                            site_type = result.get('@type', '')
-                            result['url'] = self._build_nlweb_url(url, site_type)
-                            logger.debug(f"Modified URL from '{url}' to '{result['url']}'")
+                        if not url.startswith(("http://", "https://")):
+                            site_type = result.get("@type", "")
+                            result["url"] = self._build_nlweb_url(url, site_type)
+                            logger.debug(
+                                f"Modified URL from '{url}' to '{result['url']}'"
+                            )
 
             # Handle single result messages
-            elif 'url' in message:
-                url = message['url']
-                if not url.startswith(('http://', 'https://')):
-                    site_type = message.get('@type', '')
-                    message['url'] = self._build_nlweb_url(url, site_type)
+            elif "url" in message:
+                url = message["url"]
+                if not url.startswith(("http://", "https://")):
+                    site_type = message.get("@type", "")
+                    message["url"] = self._build_nlweb_url(url, site_type)
                     logger.debug(f"Modified URL from '{url}' to '{message['url']}'")
 
         # Call parent class's send_message with modified message
         await super().send_message(message)
-    
+
     async def crossEncodeItems(self, descriptions: list[str]) -> list[float]:
         try:
-            formatted_descriptions = [json.dumps(
-                json.loads(description), indent=2, ensure_ascii=False
-            ) for description in descriptions]
+            formatted_descriptions = [
+                json.dumps(json.loads(description), indent=2, ensure_ascii=False)
+                for description in descriptions
+            ]
         except:
             formatted_descriptions = descriptions
 
@@ -100,7 +104,7 @@ class WhoHandler (NLWebHandler) :
         )
         resp.raise_for_status()
         return resp.json()
-    
+
     async def piScoreItem(self, description: str) -> int:
         try:
             formatted_description = json.dumps(
@@ -113,15 +117,77 @@ class WhoHandler (NLWebHandler) :
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-model-override": "pi-scorer-bert:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
             },
             json={
                 "llm_input": self.query,
                 "llm_output": formatted_description,
                 "scoring_spec": [
                     {
-                        "question": "Does the response satisfy the primary intent of the input?"
-                    }
+                        "question": "Is the response relevant to the input?",
+                        "label": "Relevance1",
+                        "weight": 1.0,
+                        "parameters": [
+                            0.4145108510908031,
+                            0.5288173710189582,
+                            0.6881447104340327,
+                            0.7252949237751069,
+                            0.8253168287415137,
+                            0.9412728726062036,
+                        ],
+                    },
+                    {
+                        "question": "Does the response contain information that is relevant to the search query?",
+                        "label": "Relevance2",
+                        "weight": 1.0,
+                        "parameters": [
+                            0.4145108510908031,
+                            0.5288173710189582,
+                            0.6881447104340327,
+                            0.7252949237751069,
+                            0.8253168287415137,
+                            0.9412728726062036,
+                        ],
+                    },
+                    {
+                        "question": "Is the response appropriate given the context of the input?",
+                        "label": "Relevance3",
+                        "weight": 1.0,
+                        "parameters": [
+                            0.4145108510908031,
+                            0.5288173710189582,
+                            0.6881447104340327,
+                            0.7252949237751069,
+                            0.8253168287415137,
+                            0.9412728726062036,
+                        ],
+                    },
+                    {
+                        "question": "Would the response satisfy the request made in the input?",
+                        "label": "Relevance4",
+                        "weight": 1.0,
+                        "parameters": [
+                            0.4145108510908031,
+                            0.5288173710189582,
+                            0.6881447104340327,
+                            0.7252949237751069,
+                            0.8253168287415137,
+                            0.9412728726062036,
+                        ],
+                    },
+                    {
+                        "question": "Is the central theme of the query clearly stated in the response?",
+                        "label": "Central Theme Clarity",
+                        "weight": 1.0,
+                        "parameters": [
+                            0.4145108510908031,
+                            0.5288173710189582,
+                            0.6881447104340327,
+                            0.7252949237751069,
+                            0.8253168287415137,
+                            0.9412728726062036,
+                        ],
+                    },
                 ],
             },
         )
@@ -156,8 +222,6 @@ class WhoHandler (NLWebHandler) :
         else:
             return str(schema_org)
 
-
-    
     async def rankItem(self, url, json_str, name, site):
         """Rank a single site for relevance to the query."""
         description = trim_json(json_str)
@@ -169,9 +233,7 @@ class WhoHandler (NLWebHandler) :
         }
 
         # Handle both string and dictionary inputs for json_str
-        schema_object = (
-            json_str if isinstance(json_str, dict) else json.loads(json_str)
-        )
+        schema_object = json_str if isinstance(json_str, dict) else json.loads(json_str)
 
         # Store the result
         return {
@@ -182,7 +244,7 @@ class WhoHandler (NLWebHandler) :
             "schema_object": schema_object,
             "sent": False,
         }
-    
+
     async def sendAnswers(self, answers, force=False):
         """Send ranked sites to the client."""
         json_results = []
@@ -218,15 +280,11 @@ class WhoHandler (NLWebHandler) :
         if json_results:
             # Use the new schema to create and auto-send the message
             await create_assistant_result(json_results, handler=self)
-            logger.error(
-                f"Sent {len(json_results)} results"
-            )
+            logger.error(f"Sent {len(json_results)} results")
 
     async def runQuery(self):
         # Always use general search with nlweb_sites
-        logger.info(
-            "Using general search method with site=nlweb_sites for who query"
-        )
+        logger.info("Using general search method with site=nlweb_sites for who query")
 
         # Search using the special nlweb_sites collection
         items = await LOCAL_CORPUS.search(
@@ -234,7 +292,7 @@ class WhoHandler (NLWebHandler) :
             k=100 if "num" not in self.query_params else int(self.query_params["num"]),
         )
 
-        #self.final_retrieved_items = items
+        # self.final_retrieved_items = items
         print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
 
         tasks = []
@@ -245,7 +303,7 @@ class WhoHandler (NLWebHandler) :
                 json_strs.append(json_str)
                 tasks.append(tg.create_task(self.rankItem(url, json_str, name, site)))
             cross_encoded = tg.create_task(self.crossEncodeItems(json_strs))
-        
+
         print(f"{cross_encoded.result()=}")
 
         # Use min_score from handler if available, otherwise default to 51
@@ -254,7 +312,7 @@ class WhoHandler (NLWebHandler) :
 
         filtered = [
             r.result()
-            for r in tasks 
+            for r in tasks
             if r.result().get("ranking", {}).get("score", 0) > min_score_threshold
         ]
         ranked = sorted(
