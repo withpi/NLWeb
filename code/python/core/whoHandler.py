@@ -78,6 +78,28 @@ class WhoHandler (NLWebHandler) :
         # Call parent class's send_message with modified message
         await super().send_message(message)
     
+    async def crossEncodeItems(self, descriptions: list[str]) -> list[float]:
+        try:
+            formatted_descriptions = [json.dumps(
+                json.loads(description), indent=2, ensure_ascii=False
+            ) for description in descriptions]
+        except:
+            formatted_descriptions = descriptions
+
+        resp = await self.client.post(
+            "https://api.withpi.ai/v1/search/query_to_passage/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-hotswaps": "pi-cross-encoder-small:pi-cross-encoder-qwen",
+                "x-model-override": "pi-cross-encoder-qwen:modal:https://pilabs-qwen--pi-modelserver-scorermodel-invocations.modal.run",
+            },
+            json={
+                "query": self.query,
+                "passages": formatted_descriptions,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
     
     async def piScoreItem(self, description: str) -> int:
         try:
@@ -216,9 +238,15 @@ class WhoHandler (NLWebHandler) :
         print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
 
         tasks = []
+        cross_encoded = None
         async with asyncio.TaskGroup() as tg:
+            json_strs = []
             for url, json_str, name, site in items:
+                json_strs.append(json_str)
                 tasks.append(tg.create_task(self.rankItem(url, json_str, name, site)))
+            cross_encoded = tg.create_task(self.crossEncodeItems(json_strs))
+        
+        print(f"{cross_encoded.result()=}")
 
         # Use min_score from handler if available, otherwise default to 51
         min_score_threshold = getattr(self, "min_score", 51)
@@ -237,6 +265,5 @@ class WhoHandler (NLWebHandler) :
         print(
             f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ==="
         )
-        print(to_send)
         await self.sendAnswers(to_send, force=True)
         return self.return_value
