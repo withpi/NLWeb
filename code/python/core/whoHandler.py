@@ -32,7 +32,7 @@ class WhoHandler(NLWebHandler):
         # Keep prev_queries for context if provided
         super().__init__(query_params, http_handler)
 
-        self.query_classification_threshold = 0.4
+        self.query_classification_threshold = 0.35
 
     def _build_nlweb_url(self, site_url, site_type=None):
         """Helper function to build the complete NLWEB URL with all parameters."""
@@ -110,6 +110,44 @@ class WhoHandler(NLWebHandler):
                         "weight": 1.0,
                     }
                 )
+        if is_vertical_query:
+            scoring_spec.append(
+                {
+                    "question": f"Is this website a store that sells products?",
+                    "label": "is_store",
+                    "weight": 0.0,
+                }
+            )
+        else:
+            scoring_spec.append(
+                {
+                    "question": f"Is the shop relevant to the query?",
+                    "label": "Shop Relevance",
+                    "weight": 0.25,
+                }
+            )
+            scoring_spec.append(
+                {
+                    "question": f"Does the shop sell the product explicitly mentioned in the query?",
+                    "label": "Product Presence",
+                    "weight": 0.25,
+                }
+            )	
+            scoring_spec.append(
+                {
+                    "question": f"Does the shop sell the equipments that are being asked for in the query?",
+                    "label": "Equipment Presence",
+                    "weight": 0.25,
+                }
+            )	
+            scoring_spec.append(
+                {
+                    "question": f"Are the products appropriate for the audience mentioned in the query?",
+                    "label": "Audience Appropriateness",
+                    "weight": 0.25,
+                }
+            )
+            	
         if is_shopping_doc and is_vertical_query:
             # filter doc
             return 0
@@ -119,6 +157,7 @@ class WhoHandler(NLWebHandler):
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
                 "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
                 "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+                #"x-model-override": "pi-scorer-bert:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
             },
             json={
                 "llm_input": self.query,
@@ -128,6 +167,13 @@ class WhoHandler(NLWebHandler):
         )
         resp.raise_for_status()
         question_scores = resp.json()["question_scores"]
+        if is_vertical_query:
+            if question_scores["is_store"] > 0.2:
+                return 0
+            for category, score in query_annotations.items():
+                if score > self.query_classification_threshold:
+                    if question_scores[category] < 0.2:
+                        return 0
         ce_score = question_scores.pop("Relevance", 0.0)
         pi_score = (
             sum(question_scores.values()) / len(question_scores)
@@ -137,6 +183,7 @@ class WhoHandler(NLWebHandler):
 
         if pi_score is not None:
             ce_weight = 0.4
+            print(f"SCORE DEBUG =============\nurl={url}, pi_score={pi_score}, ce_weight={ce_weight}, intent_scores={question_scores}")
             return int(((pi_score + ce_weight * ce_score) / (1.0 + ce_weight)) * 100)
         return int(ce_score * 100)
 
@@ -289,7 +336,7 @@ class WhoHandler(NLWebHandler):
         query_annotations = await self.queryClassify(
             scoring_spec=[
                 {
-                    "question": f"Is the query seeking information about {category} category?",
+                    "question": f"Is the query's primary intent to find {category}?",
                     "label": category,
                     "weight": 1.0,
                 }
@@ -310,14 +357,16 @@ class WhoHandler(NLWebHandler):
             if score > self.query_classification_threshold
         ]
 
+        print(f"above thresh: {above_thresh}")
+
         # If there are more than 3 above threshold, keep them all;
         # otherwise, take top 3 overall.
-        if len(above_thresh) > 3:
-            search_cats = above_thresh
-        else:
-            search_cats = [cat for cat, _ in sorted_items[:3]]
-        print(f"Search cat scores: {query_annotations}")
-        print(f"Search cats: {search_cats}")
+        # if len(above_thresh) > 3:
+        #     search_cats = above_thresh
+        # else:
+        #     search_cats = [cat for cat, _ in sorted_items[:3]]
+        # print(f"Search cat scores: {query_annotations}")
+        # print(f"Search cats: {search_cats}")
         return query_annotations
 
     async def runQuery(self):
@@ -343,10 +392,10 @@ class WhoHandler(NLWebHandler):
         # ]
         ALL_CATEGORIES = [
             "recipes",
-            "travels",
+            "travel/tourism, sightseeing, or things to do",
             "movies",
             "events",
-            "education",
+            "educational content",
             "podcasts",
         ]
         # ALL_CATEGORIES = [
