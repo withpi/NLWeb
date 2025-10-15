@@ -12,6 +12,8 @@ import numpy as np
 import bm25s
 import Stemmer
 from datasets import load_dataset, Dataset
+from collections import defaultdict
+from tqdm import tqdm
 
 from embedding_providers.azure_oai_embedding import get_azure_openai_client
 
@@ -66,62 +68,75 @@ class LocalCorpus:
         dataset_raw = load_dataset(self.dataset_name, split=self.split)
         self.dataset = cast(Dataset, dataset_raw)
 
-        # Extract text corpus (adjust field name based on actual dataset structure)
-        # Assuming the dataset has a 'text' or similar field
-        # Build corpus from dataset - may need adjustment based on actual schema
-        self.corpus_text = []
-        self.corpus_structured = []
-        self.embeddings = []
+        self.corpus_text_map = defaultdict(list)
+        self.corpus_structured_map = defaultdict(list)
+        self.embeddings_map = defaultdict(list)
 
-        for item in self.dataset:
-            self.corpus_text.append(str(item["schema_object"]))
+        for item in tqdm(self.dataset):
             json_obj = json.loads(item["schema_object"])
-            self.corpus_structured.append(
+            self.corpus_text_map["ALL"].append(str(item["schema_object"]))
+            self.corpus_structured_map["ALL"].append(
                 (item["url"], item["schema_object"], json_obj["name"], "nlweb_sites")
             )
-        self.embeddings = normalize(np.array(self.dataset["schema_object_embedding"]))
+            self.embeddings_map["ALL"].append(item["schema_object_embedding"])
 
-        self.non_shopify_dataset = self.dataset.filter(
-            lambda ex: "myshopify.com" not in ex["url"]
-        )
-        self.non_shopify_corpus_text = []
-        self.non_shopify_corpus_structured = []
-        self.non_shopify_embeddings = []
-        for item in self.non_shopify_dataset:
-            self.non_shopify_corpus_text.append(str(item["schema_object"]))
-            json_obj = json.loads(item["schema_object"])
-            self.non_shopify_corpus_structured.append(
-                (item["url"], item["schema_object"], json_obj["name"], "nlweb_sites")
+            if "myshopify.com" not in item["url"]:
+                self.corpus_text_map["NON_SHOPIFY"].append(str(item["schema_object"]))
+                self.corpus_structured_map["NON_SHOPIFY"].append(
+                    (
+                        item["url"],
+                        item["schema_object"],
+                        json_obj["name"],
+                        "nlweb_sites",
+                    )
+                )
+                self.embeddings_map["NON_SHOPIFY"].append(
+                    item["schema_object_embedding"]
+                )
+                shopping_cat_parsed = json.loads(item["shopping_cat_parsed"])
+                top_level_categories = list(shopping_cat_parsed.keys())
+            else:
+                top_level_categories = item["pi_cat_1"] or []
+
+            for category in top_level_categories:
+                json_obj = json.loads(item["schema_object"])
+                self.corpus_text_map[category].append(str(item["schema_object"]))
+                self.corpus_structured_map[category].append(
+                    (
+                        item["url"],
+                        item["schema_object"],
+                        json_obj["name"],
+                        "nlweb_sites",
+                    )
+                )
+                self.embeddings_map[category].append(item["schema_object_embedding"])
+
+        for category in self.embeddings_map.keys():
+            self.embeddings_map[category] = normalize(
+                np.array(self.embeddings_map[category])
             )
-        self.non_shopify_embeddings = normalize(
-            np.array(self.non_shopify_dataset["schema_object_embedding"])
-        )
 
-        logger.info(f"Loaded {len(self.corpus_text)} documents")
+        logger.info(f"Loaded {len(self.dataset)} documents")
+        logger.info(f"Loaded {len(self.corpus_text_map)} sub-corpora")
 
     def _build_index(self) -> None:
         """Tokenize corpus and build BM25 index."""
         logger.info("Building BM25 index...")
 
-        # Tokenize the corpus
-        corpus_tokens = bm25s.tokenize(
-            self.corpus_text, stopwords=self.stopwords, stemmer=self.stemmer
-        )
+        self.retriever_map = {}
 
-        # Create and index the BM25 model
-        retriever = bm25s.BM25()
-        retriever.index(corpus_tokens)
-        self.retriever = retriever
+        for category in self.corpus_text_map.keys():
+            # Tokenize the corpus
+            corpus_tokens = bm25s.tokenize(
+                self.corpus_text_map[category],
+                stopwords=self.stopwords,
+                stemmer=self.stemmer,
+            )
 
-        # Tokenize the corpus
-        non_shopify_corpus_tokens = bm25s.tokenize(
-            self.non_shopify_corpus_text, stopwords=self.stopwords, stemmer=self.stemmer
-        )
-
-        # Create and index the BM25 model
-        non_shopify_retriever = bm25s.BM25()
-        non_shopify_retriever.index(non_shopify_corpus_tokens)
-        self.non_shopify_retriever = non_shopify_retriever
+            # Create and index the BM25 model
+            retriever = bm25s.BM25()
+            retriever.index(corpus_tokens)
+            self.retriever_map[category] = retriever
 
         logger.info("BM25 index built successfully")
 
@@ -131,19 +146,15 @@ class LocalCorpus:
         hnsw_efConstruction = 128
         hnsw_efSearch = 100
 
-        self.index = faiss.IndexHNSWFlat(1024, hnsw_M, faiss.METRIC_INNER_PRODUCT)
-        self.index.hnsw.efConstruction = hnsw_efConstruction
-        self.index.hnsw.efSearch = hnsw_efSearch
+        self.index_map = {}
+        for category in self.corpus_text_map.keys():
+            self.index_map[category] = faiss.IndexHNSWFlat(
+                1024, hnsw_M, faiss.METRIC_INNER_PRODUCT
+            )
+            self.index_map[category].hnsw.efConstruction = hnsw_efConstruction
+            self.index_map[category].hnsw.efSearch = hnsw_efSearch
 
-        self.index.add(self.embeddings)
-
-        self.non_shopify_index = faiss.IndexHNSWFlat(
-            1024, hnsw_M, faiss.METRIC_INNER_PRODUCT
-        )
-        self.non_shopify_index.hnsw.efConstruction = hnsw_efConstruction
-        self.non_shopify_index.hnsw.efSearch = hnsw_efSearch
-
-        self.non_shopify_index.add(self.non_shopify_embeddings)
+            self.index_map[category].add(self.embeddings_map[category])
 
     async def internal_search(
         self, query: str, retriever, embedding_index, corpus_structured, k: int = 10
@@ -192,17 +203,17 @@ class LocalCorpus:
     async def search(self, query: str, k: int = 10) -> List[dict[str, Any]]:
         non_shopify_items = await self.internal_search(
             query=query,
-            retriever=self.non_shopify_retriever,
-            embedding_index=self.non_shopify_index,
-            corpus_structured=self.non_shopify_corpus_structured,
+            retriever=self.retriever_map["NON_SHOPIFY"],
+            embedding_index=self.index_map["NON_SHOPIFY"],
+            corpus_structured=self.corpus_structured_map["NON_SHOPIFY"],
             k=k,
         )
 
         all_items = await self.internal_search(
             query=query,
-            retriever=self.retriever,
-            embedding_index=self.index,
-            corpus_structured=self.corpus_structured,
+            retriever=self.retriever_map["ALL"],
+            embedding_index=self.index_map["ALL"],
+            corpus_structured=self.corpus_structured_map["ALL"],
             k=k,
         )
 
