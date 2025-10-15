@@ -32,6 +32,8 @@ class WhoHandler(NLWebHandler):
         # Keep prev_queries for context if provided
         super().__init__(query_params, http_handler)
 
+        self.query_classification_threshold = 0.1
+
     def _build_nlweb_url(self, site_url, site_type=None):
         """Helper function to build the complete NLWEB URL with all parameters."""
         from urllib.parse import quote
@@ -133,7 +135,7 @@ class WhoHandler(NLWebHandler):
 
         scoring_spec = []
         for category, score in query_annotations.items():
-            if score > 0.8:
+            if score > self.query_classification_threshold:
                 scoring_spec.append(
                     {
                         "question": f"Is the response about {category}?",
@@ -297,45 +299,88 @@ class WhoHandler(NLWebHandler):
         #     "Jewelry & Watches",
         #     "Toys, Hobbies & Collectibles",
         # ]
-        #CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
-        ALL_CATEGORIES = ['Travel & Events',
-                      'Bags & Leather',
-                      'Kitchen & Culinary Tools',
-                      'Japanese Culture & Goods',
-                      'Restaurants & Dining',
-                      'Home & Garden', 'Beverages',
-                      'Education & Research',
-                      'Textiles & Crafts',
-                      'Apparel & Accessories',
-                      'Cooking & Food Media',
-                      'Ceramics & Pottery',
-                      'Health & Wellness',
-                      'Home & Lifestyle',
-                      'Pets & Aquatics',
-                      'Real Estate',
-                      'Baby & Kids',
-                      'Meals & Nutrition',
-                      'Sports & Outdoor',
-                      'General & Misc',
-                      'Crafts & Sewing',
-                      'Toys, Hobbies & Collectibles',
-                      'Jewelry & Watches',
-                      'Culinary Ingredients & Pantry',
-                      'Garden & Botanicals',
-                      'Nutrition & Supplements',
-                      'Beauty & Personal Care',
-                      'Food & Beverage',
-                      'Business & Industrial',
-                      'Apparel & Lifestyle',
-                      'Kitchen Tools & Utensils',
-                      'Media & Entertainment',
-                      'Packaged Foods & Snacks',
-                      'Books & Media',
-                      'Smoke & Vape',
-                      'Services & Education',
-                      'Coffee Equipment & Brewing']
-        SHOPPING_CATEGORIES = ['Bags & Leather', 'Kitchen & Culinary Tools', 'Textiles & Crafts', 'Apparel & Accessories', 'Ceramics & Pottery', 'Health & Wellness', 'Home & Lifestyle', 'Pets & Aquatics', 'Baby & Kids', 'Sports & Outdoor', 'General & Misc', 'Toys, Hobbies & Collectibles', 'Jewelry & Watches', 'Garden & Botanicals', 'Beauty & Personal Care', 'Food & Beverage', 'Business & Industrial', 'Books & Media', 'Smoke & Vape', 'Services & Education']
-        OTHER_CATEGORIES = ['Meals & Nutrition', 'Travel & Events', 'Japanese Culture & Goods', 'Beverages', 'Apparel & Lifestyle', 'Kitchen Tools & Utensils', 'Education & Research', 'Cooking & Food Media', 'Media & Entertainment', 'Ceramics & Pottery', 'Crafts & Sewing', 'Restaurants & Dining', 'Packaged Foods & Snacks', 'Real Estate', 'Culinary Ingredients & Pantry', 'Nutrition & Supplements', 'Home & Garden', 'Coffee Equipment & Brewing']
+        # CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
+        ALL_CATEGORIES = [
+            "Travel & Events",
+            "Bags & Leather",
+            "Kitchen & Culinary Tools",
+            "Japanese Culture & Goods",
+            "Restaurants & Dining",
+            "Home & Garden",
+            "Beverages",
+            "Education & Research",
+            "Textiles & Crafts",
+            "Apparel & Accessories",
+            "Cooking & Food Media",
+            "Ceramics & Pottery",
+            "Health & Wellness",
+            "Home & Lifestyle",
+            "Pets & Aquatics",
+            "Real Estate",
+            "Baby & Kids",
+            "Meals & Nutrition",
+            "Sports & Outdoor",
+            "General & Misc",
+            "Crafts & Sewing",
+            "Toys, Hobbies & Collectibles",
+            "Jewelry & Watches",
+            "Culinary Ingredients & Pantry",
+            "Garden & Botanicals",
+            "Nutrition & Supplements",
+            "Beauty & Personal Care",
+            "Food & Beverage",
+            "Business & Industrial",
+            "Apparel & Lifestyle",
+            "Kitchen Tools & Utensils",
+            "Media & Entertainment",
+            "Packaged Foods & Snacks",
+            "Books & Media",
+            "Smoke & Vape",
+            "Services & Education",
+            "Coffee Equipment & Brewing",
+        ]
+        SHOPPING_CATEGORIES = [
+            "Bags & Leather",
+            "Kitchen & Culinary Tools",
+            "Textiles & Crafts",
+            "Apparel & Accessories",
+            "Ceramics & Pottery",
+            "Health & Wellness",
+            "Home & Lifestyle",
+            "Pets & Aquatics",
+            "Baby & Kids",
+            "Sports & Outdoor",
+            "General & Misc",
+            "Toys, Hobbies & Collectibles",
+            "Jewelry & Watches",
+            "Garden & Botanicals",
+            "Beauty & Personal Care",
+            "Food & Beverage",
+            "Business & Industrial",
+            "Books & Media",
+            "Smoke & Vape",
+            "Services & Education",
+        ]
+        OTHER_CATEGORIES = [
+            "Meals & Nutrition",
+            "Travel & Events",
+            "Japanese Culture & Goods",
+            "Beverages",
+            "Apparel & Lifestyle",
+            "Kitchen Tools & Utensils",
+            "Education & Research",
+            "Cooking & Food Media",
+            "Media & Entertainment",
+            "Ceramics & Pottery",
+            "Crafts & Sewing",
+            "Restaurants & Dining",
+            "Packaged Foods & Snacks",
+            "Real Estate",
+            "Culinary Ingredients & Pantry",
+            "Nutrition & Supplements",
+            "Home & Garden",
+            "Coffee Equipment & Brewing",
+        ]
 
         query_annotations_trigger = await self.queryClassify(
             scoring_spec=[
@@ -348,7 +393,10 @@ class WhoHandler(NLWebHandler):
         )
         query_annotations_trigger = query_annotations_trigger["question_scores"]
         print(f"Query triggering: {query_annotations_trigger}")
-        is_shopping = query_annotations_trigger["shopping_intent"] > 0.1
+        is_shopping = (
+            query_annotations_trigger["shopping_intent"]
+            > self.query_classification_threshold
+        )
         # CATEGORIES = SHOPPING_CATEGORIES if is_shopping else OTHER_CATEGORIES
         # print(f"Using categories: {CATEGORIES}")
         CATEGORIES = ALL_CATEGORIES
@@ -367,10 +415,16 @@ class WhoHandler(NLWebHandler):
         query_annotations = query_annotations["question_scores"]
 
         # Sort categories by descending score
-        sorted_items = sorted(query_annotations.items(), key=lambda x: x[1], reverse=True)
+        sorted_items = sorted(
+            query_annotations.items(), key=lambda x: x[1], reverse=True
+        )
 
         # Get all above 0.1
-        above_thresh = [cat for cat, score in sorted_items if score > 0.1]
+        above_thresh = [
+            cat
+            for cat, score in sorted_items
+            if score > self.query_classification_threshold
+        ]
 
         # If there are more than 3 above threshold, keep them all;
         # otherwise, take top 3 overall.
@@ -387,14 +441,13 @@ class WhoHandler(NLWebHandler):
         print(f"Search cat scores: {query_annotations}")
         print(f"Search cats: {search_cats}")
         print(f"Search k: {k}")
-        BASE_CATEGORIES = ["ALL"] # if is_shopping else ["NON_SHOPIFY"]
+        BASE_CATEGORIES = ["ALL"]  # if is_shopping else ["NON_SHOPIFY"]
         items = await LOCAL_CORPUS.search(
             query=str(self.query),
-            #categories=["ALL", "NON_SHOPIFY"],
-            categories=BASE_CATEGORIES
-             + search_cats,
+            # categories=["ALL", "NON_SHOPIFY"],
+            categories=BASE_CATEGORIES + search_cats,
             k=k,
-            #k=20
+            # k=20
         )
 
         # self.final_retrieved_items = items
