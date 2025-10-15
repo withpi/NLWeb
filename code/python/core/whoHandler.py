@@ -575,7 +575,7 @@ class WhoHandler(NLWebHandler):
 
         if scores:
             # Use automatic cutoff instead of static threshold
-            min_score_threshold = auto_score_cutoff(scores, smooth=3, min_keep=4, drop_ratio=2.0)
+            min_score_threshold = auto_score_cutoff(scores, smooth=3, min_keep=5, drop_ratio=1.5)
             if isinstance(min_score_threshold, tuple):
                 min_score_threshold = min_score_threshold[0]
         else:
