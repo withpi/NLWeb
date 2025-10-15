@@ -78,8 +78,10 @@ class LocalCorpus:
             is_shopify = "myshopify.com" in url
             if is_shopify and row["shopping_cat_parsed"]:
                 tlc = list(json.loads(row["shopping_cat_parsed"]).keys())
-            elif row["pi_cat_1"]:
-                tlc = row["pi_cat_1"]
+            elif row["pi_cat_2"]:
+                tlc = row["pi_cat_2"]
+                if "appet" in row["url"]:
+                    tlc.append("Recipe & Technique Platforms")
             else:
                 tlc = []
             assert(url not in metadata)

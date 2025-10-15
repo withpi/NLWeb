@@ -83,7 +83,7 @@ class WhoHandler(NLWebHandler):
         # Call parent class's send_message with modified message
         await super().send_message(message)
 
-    async def piScoreItem(self, description: str, query_annotations) -> int:
+    async def piScoreItem(self, description: str, query_annotations, url) -> int:
         try:
             formatted_description = json.dumps(
                 json.loads(description), indent=2, ensure_ascii=False
@@ -96,8 +96,11 @@ class WhoHandler(NLWebHandler):
             "label": "Relevance",
             "weight": 1.0,
         }]
+        is_vertical_query = False
+        is_shopping_doc = "myshopify.com" in url
         for category, score in query_annotations.items():
             if score > self.query_classification_threshold:
+                is_vertical_query = True
                 scoring_spec.append(
                     {
                         "question": f"Is the response about {category}?",
@@ -105,6 +108,9 @@ class WhoHandler(NLWebHandler):
                         "weight": 1.0,
                     }
                 )
+        if is_shopping_doc and is_vertical_query:
+            # filter doc
+            return 0
         resp = await self.client.post(
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
@@ -122,7 +128,7 @@ class WhoHandler(NLWebHandler):
         question_scores = resp.json()["question_scores"]
         ce_score = question_scores.pop("Relevance", 0.0)
         pi_score = sum(question_scores.values()) / len(question_scores) if len(question_scores) > 0 else None
-        
+
         if pi_score is not None:
             ce_weight = 0.4
             return int(((pi_score + ce_weight * ce_score) / (1.0 + ce_weight)) * 100)
@@ -190,7 +196,7 @@ class WhoHandler(NLWebHandler):
     ):
         """Rank a single site for relevance to the query."""
         description = trim_json(json_str)
-        pi_score = await self.piScoreItem(str(description), query_annotations)
+        pi_score = await self.piScoreItem(str(description), query_annotations, url)
         ranking = {
             "score": pi_score,
             "description": self.getDescription(description),
