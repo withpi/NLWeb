@@ -1,3 +1,4 @@
+import json
 from core.baseHandler import NLWebHandler
 from core.retriever import search
 from core.whoRanking import WhoRanking
@@ -81,12 +82,18 @@ class WhoHandler (NLWebHandler) :
             )
 
             # Search using the special nlweb_sites collection
-            items = await search(
+            items_unmangled = await search(
                 self.query,
                 site="nlweb_sites",  # Use the sites collection
                 query_params=self.query_params,
                 num_results=100 if "num" not in self.query_params else int(self.query_params["num"]),
             )
+            items = []
+            for item in items_unmangled:
+                jsonobj = json.loads(item[1])
+                jsonobj['url'] = f"https://{item[0]}"
+                items.append((f"https://{item[0]}", json.dumps(jsonobj), item[2], item[3]))
+                
             self.final_retrieved_items = items
             print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
             
