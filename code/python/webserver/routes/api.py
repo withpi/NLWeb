@@ -9,6 +9,7 @@ from methods.generate_answer import GenerateAnswer
 from webserver.aiohttp_streaming_wrapper import AioHttpStreamingWrapper
 from core.retriever import get_vector_db_client
 from core.utils.utils import get_param
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def setup_api_routes(app: web.Application):
     # Info endpoints
     app.router.add_get('/who', who_handler)
     app.router.add_get('/sites', sites_handler)
+    app['httpx'] = httpx.AsyncClient(timeout=10.0, http2=True, limits=httpx.Limits(max_connections=200, max_keepalive_connections=40))
 
 
 async def ask_handler(request: web.Request) -> web.Response:
@@ -157,7 +159,7 @@ async def who_handler(request: web.Request) -> web.Response:
             
             try:
                 # Run the who handler with streaming
-                handler = WhoHandler(query_params, wrapper)
+                handler = WhoHandler(query_params, wrapper, client=request.app['httpx'])
                 await handler.runQuery()
                 
                 # Send completion message
@@ -232,5 +234,3 @@ async def sites_handler(request: web.Request) -> web.Response:
             "error": f"Failed to get sites: {str(e)}"
         }
         return web.json_response(error_data, status=500)
-
-

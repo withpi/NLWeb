@@ -121,6 +121,24 @@ class AioHTTPServer:
         # Setup routes
         from .routes import setup_routes
         setup_routes(app)
+
+        _ = await app['httpx'].post(
+            "https://api.withpi.ai/v1/scoring_system/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
+                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+            },
+            json={
+                "llm_input": "",
+                "llm_output": "Test query",
+                "scoring_spec": {
+                        "question": "Test question",
+                        "label": "test",
+                        "weight": 1.0,
+                }
+            },
+        )
         
         # Setup startup and cleanup handlers
         app.on_startup.append(self._on_startup)

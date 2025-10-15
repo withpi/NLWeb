@@ -19,8 +19,8 @@ DEFAULT_NLWEB_ENDPOINT = "https://nlwm.azurewebsites.net/ask"
 
 class WhoHandler(NLWebHandler):
 
-    def __init__(self, query_params, http_handler):
-        self.client = httpx.AsyncClient(timeout=10.0)
+    def __init__(self, query_params, http_handler, client: httpx.AsyncClient):
+        self.client = client
         # Remove site parameter - we'll use nlweb_sites
         if "site" in query_params:
             del query_params["site"]
