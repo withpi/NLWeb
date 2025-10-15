@@ -738,6 +738,8 @@ def main():
                         help="If set, dump all metrics/tables/curves to this JSON file.")
     parser.add_argument("--compare-json", type=str, nargs="*", default=None,
                         help="Optional NAME=PATH pairs of prior runs to compare (up to 3).")
+    parser.add_argument("--query-id", type=int, default=None,
+                        help="If set, only run evaluation for this specific query_id.")
 
     args = parser.parse_args()
 
@@ -749,6 +751,14 @@ def main():
         split=args.split,
     )
     print(f"Loaded {len(queries)} queries.")
+    
+    # Filter to specific query_id if requested
+    if args.query_id is not None:
+        queries = [q for q in queries if q.query_id == args.query_id]
+        if not queries:
+            print(f"Error: Query ID {args.query_id} not found in dataset.")
+            sys.exit(1)
+        print(f"Filtered to single query: ID={args.query_id}")
 
     # Run evaluation queries
     qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped = build_qid_to_results(
