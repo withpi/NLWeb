@@ -123,7 +123,7 @@ class NLWebHandler:
         self.use_pi = use_pi not in ["False", "false", "0", None]
 
         # Maximum number of results to return to the user
-        self.max_results = get_param(query_params, "max_results", int, 40)
+        self.max_results = get_param(query_params, "max_results", int, 100)
 
         # the items that have been retrieved from the vector database, could be before decontextualization.
         # See below notes on fasttrack

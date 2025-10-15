@@ -68,6 +68,21 @@ class LocalCorpus:
         dataset_raw = load_dataset(self.dataset_name, split=self.split)
         self.dataset = cast(Dataset, dataset_raw)
 
+        # TODO: clean this up
+        auxiliary_metadata_ds = load_dataset(self.dataset_name, "metadata", split="train")
+        metadata = {}
+        for row in auxiliary_metadata_ds:
+            url = row["url"]
+            is_shopify = "myshopify.com" in url
+            if is_shopify and row["shopping_cat_parsed"]:
+                tlc = list(json.loads(row["shopping_cat_parsed"]).keys())
+            elif row["pi_cat_1"]:
+                tlc = row["pi_cat_1"]
+            else:
+                tlc = []
+            assert(url not in metadata)
+            metadata[url] = {"is_shopify": is_shopify, "top_level_categories": tlc}
+
         self.corpus_text_map = defaultdict(list)
         self.corpus_structured_map = defaultdict(list)
         self.embeddings_map = defaultdict(list)
@@ -96,7 +111,7 @@ class LocalCorpus:
                 shopping_cat_parsed = json.loads(item["shopping_cat_parsed"])
                 top_level_categories = list(shopping_cat_parsed.keys())
             else:
-                top_level_categories = item["pi_cat_1"] or []
+                top_level_categories = metadata[item["url"]]
 
             for category in top_level_categories:
                 json_obj = json.loads(item["schema_object"])
