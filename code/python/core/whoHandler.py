@@ -515,5 +515,10 @@ class WhoHandler(NLWebHandler):
         print(
             f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ==="
         )
+
+        for i in range(0, len(to_send), 3):
+            one, two, three = to_send[i:i+3]
+            print(f"{one['url']:<60} {two['url']:<60} {three['url']:<60}")
+
         await self.sendAnswers(to_send, force=True)
         return self.return_value
