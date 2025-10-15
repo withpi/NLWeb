@@ -315,6 +315,42 @@ class WhoHandler(NLWebHandler):
             await create_assistant_result(json_results, handler=self)
             logger.error(f"Sent {len(json_results)} results")
 
+    async def getQueryAnnotations(self, CATEGORIES):
+        # TODO: condition on shopping or not shopping
+        query_annotations = await self.queryClassify(
+            scoring_spec=[
+                {
+                    "question": f"Is the query seeking information about {category} category?",
+                    "label": category,
+                    "weight": 1.0,
+                }
+                for category in CATEGORIES
+            ]
+        )
+        query_annotations = query_annotations["question_scores"]
+
+        # Sort categories by descending score
+        sorted_items = sorted(
+            query_annotations.items(), key=lambda x: x[1], reverse=True
+        )
+
+        # Get all above 0.1
+        above_thresh = [
+            cat
+            for cat, score in sorted_items
+            if score > self.query_classification_threshold
+        ]
+
+        # If there are more than 3 above threshold, keep them all;
+        # otherwise, take top 3 overall.
+        if len(above_thresh) > 3:
+            search_cats = above_thresh
+        else:
+            search_cats = [cat for cat, _ in sorted_items[:3]]
+        print(f"Search cat scores: {query_annotations}")
+        print(f"Search cats: {search_cats}")
+        return query_annotations
+
     async def runQuery(self):
         # Always use general search with nlweb_sites
         logger.info("Using general search method with site=nlweb_sites for who query")
@@ -425,74 +461,24 @@ class WhoHandler(NLWebHandler):
             "Home & Garden",
             "Coffee Equipment & Brewing",
         ]
-
-        query_annotations_trigger = await self.queryClassify(
-            scoring_spec=[
-                {
-                    "question": f"Is the user's query seeking to buy something?",
-                    "label": "shopping_intent",
-                    "weight": 1.0,
-                }
-            ]
-        )
-        query_annotations_trigger = query_annotations_trigger["question_scores"]
-        print(f"Query triggering: {query_annotations_trigger}")
-        is_shopping = (
-            query_annotations_trigger["shopping_intent"]
-            > self.query_classification_threshold
-        )
+        
         # CATEGORIES = SHOPPING_CATEGORIES if is_shopping else OTHER_CATEGORIES
         # print(f"Using categories: {CATEGORIES}")
         CATEGORIES = ALL_CATEGORIES
-
-        # TODO: condition on shopping or not shopping
-        query_annotations = await self.queryClassify(
-            scoring_spec=[
-                {
-                    "question": f"Is the query seeking information about {category} category?",
-                    "label": category,
-                    "weight": 1.0,
-                }
-                for category in CATEGORIES
-            ]
-        )
-        query_annotations = query_annotations["question_scores"]
-
-        # Sort categories by descending score
-        sorted_items = sorted(
-            query_annotations.items(), key=lambda x: x[1], reverse=True
-        )
-
-        # Get all above 0.1
-        above_thresh = [
-            cat
-            for cat, score in sorted_items
-            if score > self.query_classification_threshold
-        ]
-
-        # If there are more than 3 above threshold, keep them all;
-        # otherwise, take top 3 overall.
-        if len(above_thresh) > 3:
-            search_cats = above_thresh
-        else:
-            search_cats = [cat for cat, _ in sorted_items[:3]]
-
-        # Search using the special nlweb_sites collection
-        # search_cats = [
-        #        category for category, score in query_annotations.items() if score > 0.5
-        #    ]
         k = 60 if "num" not in self.query_params else int(self.query_params["num"])
-        print(f"Search cat scores: {query_annotations}")
-        print(f"Search cats: {search_cats}")
         print(f"Search k: {k}")
-        BASE_CATEGORIES = ["ALL"]  # if is_shopping else ["NON_SHOPIFY"]
-        items = await LOCAL_CORPUS.search(
-            query=str(self.query),
-            categories=["ALL", "NON_SHOPIFY"],
-            # categories=BASE_CATEGORIES + search_cats,
-            k=k,
-            # k=20
-        )
+        async with asyncio.TaskGroup() as tg:
+            items_task = tg.create_task(LOCAL_CORPUS.search(
+                query=str(self.query),
+                categories=["ALL", "NON_SHOPIFY"],
+                # categories=BASE_CATEGORIES + search_cats,
+                k=k,
+                # k=20
+            ))
+            query_annotations_task = tg.create_task(self.getQueryAnnotations(CATEGORIES))
+        
+        items = items_task.result()
+        query_annotations = query_annotations_task.result()
 
         # self.final_retrieved_items = items
         print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
