@@ -333,7 +333,7 @@ class WhoHandler(NLWebHandler):
         query_annotations = await self.queryClassify(
             scoring_spec=[
                 {
-                    "question": f"Is the query about {category}?",
+                    "question": f"Is the query seeking information about {category} category?",
                     "label": category,
                     "weight": 1.0,
                 }
@@ -342,18 +342,35 @@ class WhoHandler(NLWebHandler):
         )
         query_annotations = query_annotations["question_scores"]
 
+        # Sort categories by descending score
+        sorted_items = sorted(query_annotations.items(), key=lambda x: x[1], reverse=True)
+
+        # Get all above 0.1
+        above_thresh = [cat for cat, score in sorted_items if score > 0.1]
+
+        # If there are more than 3 above threshold, keep them all;
+        # otherwise, take top 3 overall.
+        #if len(above_thresh) > 3:
+        #    search_cats = above_thresh
+        #else:
+        #    search_cats = [cat for cat, _ in sorted_items[:3]]
+        search_cats = above_thresh
+
         # Search using the special nlweb_sites collection
-        search_cats = [
-                 category for category, score in query_annotations.items() if score > 0.5
-             ]
+        # search_cats = [
+        #        category for category, score in query_annotations.items() if score > 0.5
+        #    ]
+        k = 40 if "num" not in self.query_params else int(self.query_params["num"])
         print(f"Search cat scores: {query_annotations}")
         print(f"Search cats: {search_cats}")
+        print(f"Search k: {k}")
         items = await LOCAL_CORPUS.search(
             query=str(self.query),
             #categories=["ALL", "NON_SHOPIFY"],
             categories=["ALL"]
              + search_cats,
-            k=40 if "num" not in self.query_params else int(self.query_params["num"]),
+            k=k,
+            #k=20
         )
 
         # self.final_retrieved_items = items

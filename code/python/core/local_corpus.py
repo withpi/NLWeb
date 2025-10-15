@@ -187,6 +187,20 @@ class LocalCorpus:
         if retriever is None:
             raise RuntimeError("Index not built. Cannot search.")
 
+        # --- Get corpus size and enforce bounds
+        corpus_size = retriever.scores["num_docs"]
+        if corpus_size is None:
+            raise RuntimeError("Cannot determine corpus size from retriever.")
+
+        # Print corpus size every time
+        print(f"[internal_search] Corpus size: {corpus_size}")
+
+        bm25_k = k
+        if bm25_k > corpus_size:
+            print(f"[internal_search] Reducing bm25_k from {k} to {corpus_size}")
+            bm25_k = corpus_size
+
+
         # Tokenize query
         query_tokens = bm25s.tokenize(query, stemmer=self.stemmer)
 
@@ -203,7 +217,7 @@ class LocalCorpus:
         _, embedding_results = embedding_index.search(np.array(query_embeddings), k=k)
 
         # Retrieve top-k results
-        bm25_results, scores = retriever.retrieve(query_tokens, k=k)
+        bm25_results, scores = retriever.retrieve(query_tokens, k=bm25_k)
 
         results = list(set(bm25_results[0]).union(set(embedding_results[0])))
 
