@@ -46,6 +46,40 @@ import matplotlib
 matplotlib.use("Agg")  # for safe non-blocking file rendering
 import matplotlib.pyplot as plt
 
+# ---- 1.5) Query stratification: dev set vs train set ----
+# Dev set: minimal coverage of all query types (recipe, product, non-product)
+DEV_QUERY_IDS = [
+    "3",   # Product: gifts for toddlers (broad product category)
+    "12",  # Product: Mediterranean herbs from Greece (specific food product with geographic constraint)
+    "14",  # Non-product: movies for teenagers (entertainment/media)
+    "15",  # Recipe: jam filled gluten free cake recipe (simple recipe query)
+    "16",  # Non-product: trails with olive trees in italy (travel/location-based)
+    "20",  # Product: Porcelain clay for tea cups (specialized equipment/supplies)
+    "24",  # Recipe: japanese dishes with rice and fish (cuisine + constraints)
+]
+
+# Train set: all remaining queries
+TRAIN_QUERY_IDS = [
+    "0",   # Product: chai with interesting spices
+    "1",   # Product: coffee equipment for light roasts
+    "2",   # Product: tandoori roti equipment
+    "4",   # Product: gluten free bread equipment
+    "5",   # Product: Kyoto pottery blue glaze
+    "6",   # Product: jam storage containers
+    "7",   # Product: tea varieties with spices
+    "8",   # Product: sewing supplies for laptop bags
+    "9",   # Recipe: olive oil cake recipes
+    "10",  # Non-product: houses for sale
+    "11",  # Product: Smoked salmon products
+    "13",  # Non-product: podcasts about screen usage
+    "17",  # Product: sleep aid headphones
+    "18",  # Recipe: recipes for spices
+    "19",  # Non-product: food festival events
+    "21",  # Product: saffron threads
+    "22",  # Recipe: Bone broth pasta soup recipes
+    "23",  # Product: Handwoven baskets
+]
+
 
 # --- Begin: default URL->corpus_id mapper ------------------------------------
 from functools import lru_cache
@@ -723,7 +757,7 @@ def main():
                         help="HF dataset name housing qrels/queries/corpus.")
     parser.add_argument("--queries-config", type=str, default="queries", help="Queries config name.")
     parser.add_argument("--qrel-config", type=str, default="achint-qrels", help="Qrel config name.")
-    parser.add_argument("--split", type=str, default="train", help="Split for configs.")
+    parser.add_argument("--dataset-split", type=str, default="train", help="HuggingFace dataset split for loading data.")
     parser.add_argument("--base-url", type=str, default="http://127.0.0.1:8000/who",
                         help="Local WHO endpoint base URL.")
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP timeout seconds.")
@@ -740,6 +774,8 @@ def main():
                         help="Optional NAME=PATH pairs of prior runs to compare (up to 3).")
     parser.add_argument("--query-id", type=int, default=None,
                         help="If set, only run evaluation for this specific query_id.")
+    parser.add_argument("--split", type=str, default="all",
+                        help="Query split to use: 'train' (excludes dev), 'dev', 'test', 'all'")
 
     args = parser.parse_args()
 
@@ -748,7 +784,7 @@ def main():
     queries = load_queries(
         dataset_name=args.dataset,
         queries_config=args.queries_config,
-        split=args.split,
+        split=args.dataset_split,
     )
     print(f"Loaded {len(queries)} queries.")
     
@@ -759,6 +795,14 @@ def main():
             print(f"Error: Query ID {args.query_id} not found in dataset.")
             sys.exit(1)
         print(f"Filtered to single query: ID={args.query_id}")
+    
+    # Handle split parameter (takes precedence over --include-dev)
+    dev_qids = set(int(qid) for qid in DEV_QUERY_IDS)
+    if args.split:
+        if args.split == "dev":
+            queries = [q for q in queries if q.query_id in dev_qids]
+        elif args.split == "test":
+            queries = [q for q in queries if q.query_id not in dev_qids]
 
     # Run evaluation queries
     qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped = build_qid_to_results(
@@ -771,8 +815,8 @@ def main():
 
     # Load qrels for both sections
     print("Loading qrels (all / critical)...")
-    qrels_all = load_qrels_by_field(args.dataset, args.qrel_config, args.split, "positive_corpus_ids_all")
-    qrels_critical = load_qrels_by_field(args.dataset, args.qrel_config, args.split, "positive_corpus_ids_critical_only")
+    qrels_all = load_qrels_by_field(args.dataset, args.qrel_config, args.dataset_split, "positive_corpus_ids_all")
+    qrels_critical = load_qrels_by_field(args.dataset, args.qrel_config, args.dataset_split, "positive_corpus_ids_critical_only")
 
     # Evaluate for ALL
     print("Evaluating (ALL)...")
