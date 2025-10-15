@@ -8,6 +8,7 @@ import asyncio
 from core.local_corpus import LOCAL_CORPUS
 from core.schemas import create_assistant_result
 from core.utils.json_utils import trim_json
+import numpy as np
 
 # Who handler is work in progress for answering questions about who
 # might be able to answer a given query
@@ -16,6 +17,52 @@ logger = get_configured_logger("who_handler")
 
 DEFAULT_NLWEB_ENDPOINT = "https://nlwm.azurewebsites.net/ask"
 
+def auto_score_cutoff(
+    scores,
+    smooth: int = 3,
+    min_keep: int = 4,
+    drop_ratio: float = 2.0,
+    verbose: bool = False,
+):
+    """
+    Given a list of descending scores (0–100), pick a cutoff threshold based on relative drop size.
+
+    Args:
+        scores: list of numeric scores, ideally sorted descending.
+        smooth: optional window for smoothing drops (1 = no smoothing).
+        min_keep: minimum number of results to always keep (avoid cutting too early).
+        drop_ratio: how much larger a drop must be (vs median of smaller drops) to count as a "big drop".
+        verbose: print diagnostics if True.
+
+    Returns:
+        cutoff_score (float), cutoff_index (int)
+    """
+    if len(scores) <= min_keep:
+        return min(scores), len(scores)
+
+    scores = np.array(sorted(scores, reverse=True))
+    diffs = np.diff(scores) * -1  # positive values are drops
+
+    # Optional smoothing of differences
+    if smooth > 1:
+        kernel = np.ones(smooth) / smooth
+        diffs = np.convolve(diffs, kernel, mode="same")
+
+    # Typical (small) drop magnitude
+    typical_drop = np.median(diffs[:max(min_keep, len(diffs)//3)])
+    big_drops = np.where(diffs > drop_ratio * typical_drop)[0]
+
+    if len(big_drops) == 0:
+        cutoff_idx = len(scores)
+    else:
+        cutoff_idx = max(min_keep, big_drops[0] + 1)
+
+    cutoff_score = scores[cutoff_idx - 1]
+
+    if verbose:
+        print(f"Typical drop={typical_drop:.3f}, chosen cutoff at index {cutoff_idx}, score {cutoff_score:.3f}")
+
+    return cutoff_score, cutoff_idx
 
 class WhoHandler(NLWebHandler):
 
@@ -105,7 +152,7 @@ class WhoHandler(NLWebHandler):
                 is_vertical_query = True
                 scoring_spec.append(
                     {
-                        "question": f"Is the response about {category}?",
+                        "question": f"Is the response about {category} or a {category} website?",
                         "label": category,
                         "weight": 1.0,
                     }
@@ -150,6 +197,7 @@ class WhoHandler(NLWebHandler):
             	
         if is_shopping_doc and is_vertical_query:
             # filter doc
+            print(f"{url} filtering 1")
             return 0
         resp = await self.client.post(
             "https://api.withpi.ai/v1/scoring_system/score",
@@ -168,11 +216,13 @@ class WhoHandler(NLWebHandler):
         resp.raise_for_status()
         question_scores = resp.json()["question_scores"]
         if is_vertical_query:
-            if question_scores["is_store"] > 0.2:
+            if question_scores["is_store"] > 0.25:
+                print(f"{url}  filtering 2 {question_scores["is_store"]}")
                 return 0
             for category, score in query_annotations.items():
                 if score > self.query_classification_threshold:
-                    if question_scores[category] < 0.2:
+                    if question_scores[category] < 0.1:
+                        print(f"{url}  filtering 3: {category} {question_scores[category]}")
                         return 0
         ce_score = question_scores.pop("Relevance", 0.0)
         pi_score = (
@@ -516,8 +566,22 @@ class WhoHandler(NLWebHandler):
                     )
                 )
 
-        # Use min_score from handler if available, otherwise default to 51
-        min_score_threshold = getattr(self, "min_score", 51)
+        # Collect all scores from tasks (ignoring any missing/invalid)
+        scores = [
+            r.result().get("ranking", {}).get("score", 0)
+            for r in tasks
+            if r.result() and "ranking" in r.result()
+        ]
+
+        if scores:
+            # Use automatic cutoff instead of static threshold
+            min_score_threshold = auto_score_cutoff(scores, smooth=3, min_keep=4, drop_ratio=2.0)
+            if isinstance(min_score_threshold, tuple):
+                min_score_threshold = min_score_threshold[0]
+        else:
+            # fallback if no scores
+            min_score_threshold = getattr(self, "min_score", 51)
+
         max_results = getattr(self, "max_results", 10)
 
         filtered = [
@@ -531,7 +595,7 @@ class WhoHandler(NLWebHandler):
         to_send = ranked[:max_results]
 
         print(
-            f"\n=== WHO RANKING: Filtered to {len(filtered)} results with score > {min_score_threshold} ==="
+            f"\n=== WHO RANKING [new]: Filtered to {len(filtered)} results with score > {min_score_threshold:.2f} ==="
         )
 
         for i in range(0, len(to_send), 3):
