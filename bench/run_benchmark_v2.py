@@ -28,7 +28,6 @@ Requires:
 
 import argparse
 import base64
-import importlib
 import io
 import json
 import math
@@ -471,10 +470,11 @@ def print_ranking_pattern_analysis_terminal(
     queries: List[Query],
     per_query_all: List[PerQueryEval],
     per_query_crit: List[PerQueryEval],
+    qid_to_unmapped: Dict[int, List[Tuple[str, str]]],
     cutoffs: List[int] = [1, 3, 5, 10],
 ):
     """
-    Print per-query ranking: first high-level pattern, then detailed list of documents.
+    Print per-query ranking: first high-level pattern, then detailed list of documents on one line.
     """
     qid_to_all = {pq.query_id: pq for pq in per_query_all}
     
@@ -482,6 +482,12 @@ def print_ranking_pattern_analysis_terminal(
         if not binary_rels:
             return "(no results)"
         return "".join("+" if rel == 1 else "-" for rel in binary_rels)
+    
+    def truncate(s: str, width: int) -> str:
+        if len(s) <= width:
+            return s.ljust(width)
+        s = s.replace("\n", " ")
+        return s[:width-3] + "..."
     
     print("\n" + "=" * 150)
     print("RANKING ANALYSIS")
@@ -494,7 +500,8 @@ def print_ranking_pattern_analysis_terminal(
         if not pq_all:
             continue
         
-        print(f"\nQuery: {q.text}")
+        print(f"\nQuery ID: {qid}")
+        print(f"Query: {q.text}")
         print(f"Ranking {len(pq_all.retrieved_doc_ids)} documents | {pq_all.num_relevant} relevant in ground truth")
         
         # High-level pattern
@@ -510,9 +517,16 @@ def print_ranking_pattern_analysis_terminal(
             found_at_cutoffs.append(f"@{k}={found}/{total}({recall:.0f}%)")
         print(f"Recall:  {' '.join(found_at_cutoffs)}")
         
+        # Show unmapped URLs if any
+        unmapped = qid_to_unmapped.get(qid, [])
+        if unmapped:
+            print(f"\nURLs NOT FOUND ({len(unmapped)} unmapped):")
+            for url, reason in unmapped:
+                print(f"  - {url} ({reason})")
+        
         print("-" * 150)
         
-        # Detailed list of every document
+        # Detailed list of every document - ONE LINE per doc with fixed widths
         for rank, (doc_id, is_relevant, category, snippet, url) in enumerate(zip(
             pq_all.retrieved_doc_ids,
             pq_all.binary_rels,
@@ -521,12 +535,10 @@ def print_ranking_pattern_analysis_terminal(
             pq_all.urls
         ), start=1):
             relevant_marker = "[✓]" if is_relevant else "[ ]"
-            snippet_display = snippet if snippet else "(no text)"
-            url_display = url if url else "(no url)"
-            # Category can be quite long now with multiple categories joined by " + "
-            print(f" {rank:3d}. {relevant_marker} Category={category:<50}")
-            print(f"          URL: {url_display}")
-            print(f"          Text: {repr(snippet_display)}")
+            cat_display = truncate(category if category else "unknown", 40)
+            url_display = truncate(url if url else "(no url)", 40)
+            txt_display = truncate(snippet if snippet else "(no text)", 60)
+            print(f" {rank:3d}. {relevant_marker} {cat_display} {url_display} {txt_display}")
         
         print("=" * 150)
 
@@ -622,11 +634,12 @@ def build_qid_to_results(
     get_doc_id_fn: Callable[[str], int],
     throttle: float = 0.0,
     timeout: float = 30.0,
-) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[str]]]:
+) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[Tuple[str, str]]]]:
     qid_to_results: Dict[int, List[int]] = {}
     qid_to_categories: Dict[int, List[str]] = {}
     qid_to_snippets: Dict[int, List[str]] = {}
     qid_to_urls: Dict[int, List[str]] = {}
+    qid_to_unmapped: Dict[int, List[Tuple[str, str]]] = {}
 
     for q in tqdm(queries, desc="Querying API"):
         payload = call_api(base_url, q.text, timeout=timeout)
@@ -637,6 +650,7 @@ def build_qid_to_results(
         ranked_categories: List[str] = []
         ranked_snippets: List[str] = []
         ranked_urls: List[str] = []
+        unmapped_items: List[Tuple[str, str]] = []
         
         for item in results:
             # Prefer 'schema_object' string if present; else pass the whole item as JSON string.
@@ -648,6 +662,12 @@ def build_qid_to_results(
 
             try:
                 docid = int(get_doc_id_fn(item))
+                if docid == -1:
+                    # URL not found in corpus mapping
+                    url = item.get("url", "(no url)")
+                    unmapped_items.append((str(url), "corpus_id=-1"))
+                    continue
+                    
                 ranked_doc_ids.append(docid)
                 
                 # Extract category, snippet, and url from schema_object
@@ -679,19 +699,22 @@ def build_qid_to_results(
                     ranked_categories.append("unknown")
                     ranked_snippets.append("")
                     ranked_urls.append("")
-            except Exception:
-                # Skip items that fail mapping
+            except Exception as e:
+                # Failed to map URL to corpus_id
+                url = item.get("url", "(no url)")
+                unmapped_items.append((str(url), f"error: {type(e).__name__}"))
                 continue
 
         qid_to_results[q.query_id] = ranked_doc_ids
         qid_to_categories[q.query_id] = ranked_categories
         qid_to_snippets[q.query_id] = ranked_snippets
         qid_to_urls[q.query_id] = ranked_urls
+        qid_to_unmapped[q.query_id] = unmapped_items
 
         if throttle > 0:
             time.sleep(throttle)
 
-    return qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls
+    return qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped
 
 
 def main():
@@ -728,7 +751,7 @@ def main():
     print(f"Loaded {len(queries)} queries.")
 
     # Run evaluation queries
-    qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls = build_qid_to_results(
+    qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped = build_qid_to_results(
         queries=queries,
         base_url=args.base_url,
         get_doc_id_fn=default_get_doc_id,
@@ -848,6 +871,7 @@ def main():
         queries=queries,
         per_query_all=per_query_all,
         per_query_crit=per_query_crit,
+        qid_to_unmapped=qid_to_unmapped,
         cutoffs=[1, 10, 100],
     )
 
