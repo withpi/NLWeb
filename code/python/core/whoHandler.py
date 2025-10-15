@@ -306,13 +306,16 @@ class WhoHandler(NLWebHandler):
         query_annotations = query_annotations["question_scores"]
 
         # Search using the special nlweb_sites collection
+        search_cats = [
+                 category for category, score in query_annotations.items() if score > 0.5
+             ]
+        print(f"Search cat scores: {query_annotations}")
+        print(f"Search cats: {search_cats}")
         items = await LOCAL_CORPUS.search(
             query=str(self.query),
             categories=["ALL", "NON_SHOPIFY"],
-            # categories=["ALL"]
-            # + [
-            #     category for category, score in query_annotations.items() if score > 0.8
-            # ],
+            #categories=["ALL"]
+            # + search_cats,
             k=40 if "num" not in self.query_params else int(self.query_params["num"]),
         )
 
