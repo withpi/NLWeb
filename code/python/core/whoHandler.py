@@ -274,45 +274,50 @@ class WhoHandler(NLWebHandler):
         # Always use general search with nlweb_sites
         logger.info("Using general search method with site=nlweb_sites for who query")
 
+        # CATEGORIES = [
+        #     "Food & Beverage",
+        #     "Health & Wellness",
+        #     "Ceramics & Pottery",
+        #     "Home & Lifestyle",
+        #     "Textiles & Crafts",
+        #     "Services & Education",
+        #     "Books & Media",
+        #     "Kitchen & Culinary Tools",
+        #     "Sports & Outdoor",
+        #     "Apparel & Accessories",
+        #     "General & Misc",
+        #     "Garden & Botanicals",
+        #     "Bags & Leather",
+        #     "Jewelry & Watches",
+        #     "Toys, Hobbies & Collectibles",
+        # ]
+        CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
+
+        query_annotations = await self.queryClassify(
+            scoring_spec=[
+                {
+                    "question": f"Is the query about {category}?",
+                    "label": category,
+                    "weight": 1.0,
+                }
+                for category in CATEGORIES
+            ]
+        )
+        query_annotations = query_annotations["question_scores"]
+
         # Search using the special nlweb_sites collection
         items = await LOCAL_CORPUS.search(
-            str(self.query),
+            query=str(self.query),
+            categories=["ALL", "NON_SHOPIFY"],
+            # categories=["ALL"]
+            # + [
+            #     category for category, score in query_annotations.items() if score > 0.8
+            # ],
             k=40 if "num" not in self.query_params else int(self.query_params["num"]),
         )
 
         # self.final_retrieved_items = items
         print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
-
-        query_annotations = await self.queryClassify(
-            scoring_spec=[
-                {
-                    "question": "Is the query about recipes?",
-                    "label": "recipes",
-                    "weight": 1.0,
-                },
-                {
-                    "question": "Is the query about travels?",
-                    "label": "travels",
-                    "weight": 1.0,
-                },
-                {
-                    "question": "Is the query about movies?",
-                    "label": "movies",
-                    "weight": 1.0,
-                },
-                {
-                    "question": "Is the query about events?",
-                    "label": "events",
-                    "weight": 1.0,
-                },
-                {
-                    "question": "Is the query about education?",
-                    "label": "education",
-                    "weight": 1.0,
-                },
-            ]
-        )
-        query_annotations = query_annotations["question_scores"]
 
         tasks = []
         async with asyncio.TaskGroup() as tg:

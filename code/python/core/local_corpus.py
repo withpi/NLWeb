@@ -112,6 +112,7 @@ class LocalCorpus:
                 self.embeddings_map[category].append(item["schema_object_embedding"])
 
         for category in self.embeddings_map.keys():
+            print(f"{category}")
             self.embeddings_map[category] = normalize(
                 np.array(self.embeddings_map[category])
             )
@@ -200,25 +201,21 @@ class LocalCorpus:
 
         return rows
 
-    async def search(self, query: str, k: int = 10) -> List[dict[str, Any]]:
-        non_shopify_items = await self.internal_search(
-            query=query,
-            retriever=self.retriever_map["NON_SHOPIFY"],
-            embedding_index=self.index_map["NON_SHOPIFY"],
-            corpus_structured=self.corpus_structured_map["NON_SHOPIFY"],
-            k=k,
-        )
-
-        all_items = await self.internal_search(
-            query=query,
-            retriever=self.retriever_map["ALL"],
-            embedding_index=self.index_map["ALL"],
-            corpus_structured=self.corpus_structured_map["ALL"],
-            k=k,
-        )
-
-        merged = non_shopify_items + all_items
-        return list({x[0]: x for x in merged}.values())
+    async def search(
+        self, query: str, categories: list[str], k: int = 10
+    ) -> List[dict[str, Any]]:
+        items = []
+        for category in categories:
+            items.extend(
+                await self.internal_search(
+                    query=query,
+                    retriever=self.retriever_map[category],
+                    embedding_index=self.index_map[category],
+                    corpus_structured=self.corpus_structured_map[category],
+                    k=k,
+                )
+            )
+        return list({x[0]: x for x in items}.values())
 
     def __len__(self) -> int:
         """Return the number of documents in the corpus."""
