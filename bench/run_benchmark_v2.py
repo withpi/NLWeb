@@ -75,27 +75,20 @@ def _url_to_corpus_id_map(
         mapping[str(url)] = int(cid)
     return mapping
 
-def default_get_doc_id(schema_object: str) -> int:
+def default_get_doc_id(item) -> int:
     """
     Parse schema_object JSON, read 'url', and return corpus_id.
     If anything fails or not found, return -1.
     """
     try:
-        obj = json.loads(schema_object)
-        original_url = obj.get("url", None)
+        original_url = item.get("url", None)
         if not original_url:
-            print(f"Unknown docid! Returning -1. Object: {schema_object}")
+            print(f"Unknown docid! Returning -1. Object: {item}")
             return -1
-        
-        # Normalize URL to include protocol prefix. The corpus dataset stores URLs with https://
-        # but the API may return bare domains like "who.int/news/item/..." without protocol.
-        # Without normalization, lookup fails because "who.int/..." != "https://who.int/..."
-        if not original_url.startswith(('http://', 'https://')):
-            original_url = f"https://{original_url}"
         
         return _url_to_corpus_id_map().get(original_url, -1)
     except Exception:
-        print(f"Unknown docid! Returning -1. Object: {schema_object}")
+        print(f"Unknown docid! Returning -1. Object: {item}")
         return -1
 # --- End: default URL->corpus_id mapper --------------------------------------
 
@@ -165,21 +158,6 @@ def call_api(
             if attempt < retries - 1:
                 time.sleep(backoff * (2 ** attempt))
     raise RuntimeError(f"API call failed after {retries} attempts: {last_err}")
-
-
-def load_docid_func(docid_func_spec: str) -> Callable[[str], int]:
-    """
-    Load get_doc_id from a spec like 'module:function'.
-    The function must accept a single str (schema_object) and return an int corpus_id.
-    """
-    if ":" not in docid_func_spec:
-        raise ValueError("--docid-func must be in the form 'module:function'")
-    module_name, func_name = docid_func_spec.split(":", 1)
-    module = importlib.import_module(module_name)
-    func = getattr(module, func_name)
-    if not callable(func):
-        raise TypeError(f"{docid_func_spec} is not callable")
-    return func
 
 
 # --------------------------
@@ -547,8 +525,8 @@ def print_ranking_pattern_analysis_terminal(
             url_display = url if url else "(no url)"
             # Category can be quite long now with multiple categories joined by " + "
             print(f" {rank:3d}. {relevant_marker} Category={category:<50}")
-            print(f"         URL: {url_display}")
-            print(f"         Text: {repr(snippet_display)}")
+            print(f"          URL: {url_display}")
+            print(f"          Text: {repr(snippet_display)}")
         
         print("=" * 150)
 
@@ -669,7 +647,7 @@ def build_qid_to_results(
                 schema_obj_str = json.dumps(item, ensure_ascii=False)
 
             try:
-                docid = int(get_doc_id_fn(schema_obj_str))
+                docid = int(get_doc_id_fn(item))
                 ranked_doc_ids.append(docid)
                 
                 # Extract category, snippet, and url from schema_object
@@ -725,9 +703,6 @@ def main():
     parser.add_argument("--split", type=str, default="train", help="Split for configs.")
     parser.add_argument("--base-url", type=str, default="http://127.0.0.1:8000/who",
                         help="Local WHO endpoint base URL.")
-    parser.add_argument("--docid-func", type=str, default=None,
-                        help="Optional 'module:function' for get_doc_id(schema_object: str)->int. "
-                             "If omitted, uses built-in default URL mapper.")
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP timeout seconds.")
     parser.add_argument("--retries", type=int, default=3, help="HTTP retries per call.")
     parser.add_argument("--backoff", type=float, default=1.0, help="HTTP retry backoff base.")
@@ -752,17 +727,11 @@ def main():
     )
     print(f"Loaded {len(queries)} queries.")
 
-    # Prepare docid mapper
-    if args.docid_func:
-        get_doc_id_fn = load_docid_func(args.docid_func)
-    else:
-        get_doc_id_fn = default_get_doc_id
-
     # Run evaluation queries
     qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls = build_qid_to_results(
         queries=queries,
         base_url=args.base_url,
-        get_doc_id_fn=get_doc_id_fn,
+        get_doc_id_fn=default_get_doc_id,
         throttle=args.throttle,
         timeout=args.timeout,
     )
