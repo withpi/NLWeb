@@ -108,10 +108,9 @@ class LocalCorpus:
                 self.embeddings_map["NON_SHOPIFY"].append(
                     item["schema_object_embedding"]
                 )
-                shopping_cat_parsed = json.loads(item["shopping_cat_parsed"])
-                top_level_categories = list(shopping_cat_parsed.keys())
+                top_level_categories = metadata[item["url"]]["top_level_categories"]
             else:
-                top_level_categories = metadata[item["url"]]
+                top_level_categories = metadata[item["url"]]["top_level_categories"]
 
             for category in top_level_categories:
                 json_obj = json.loads(item["schema_object"])

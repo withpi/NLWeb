@@ -291,8 +291,45 @@ class WhoHandler(NLWebHandler):
         #     "Jewelry & Watches",
         #     "Toys, Hobbies & Collectibles",
         # ]
-        CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
-
+        #CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
+        CATEGORIES = ['Travel & Events',
+                      'Bags & Leather',
+                      'Kitchen & Culinary Tools',
+                      'Japanese Culture & Goods',
+                      'Restaurants & Dining',
+                      'Home & Garden', 'Beverages',
+                      'Education & Research',
+                      'Textiles & Crafts',
+                      'Apparel & Accessories',
+                      'Cooking & Food Media',
+                      'Ceramics & Pottery',
+                      'Health & Wellness',
+                      'Home & Lifestyle',
+                      'Pets & Aquatics',
+                      'Real Estate',
+                      'Baby & Kids',
+                      'Meals & Nutrition',
+                      'Sports & Outdoor',
+                      'General & Misc',
+                      'Crafts & Sewing',
+                      'Toys, Hobbies & Collectibles',
+                      'Jewelry & Watches',
+                      'Culinary Ingredients & Pantry',
+                      'Garden & Botanicals',
+                      'Nutrition & Supplements',
+                      'Beauty & Personal Care',
+                      'Food & Beverage',
+                      'Business & Industrial',
+                      'Apparel & Lifestyle',
+                      'Kitchen Tools & Utensils',
+                      'Media & Entertainment',
+                      'Packaged Foods & Snacks',
+                      'Books & Media',
+                      'Smoke & Vape',
+                      'Services & Education',
+                      'Coffee Equipment & Brewing']
+        
+        # TODO: condition on shopping or not shopping
         query_annotations = await self.queryClassify(
             scoring_spec=[
                 {
@@ -313,9 +350,9 @@ class WhoHandler(NLWebHandler):
         print(f"Search cats: {search_cats}")
         items = await LOCAL_CORPUS.search(
             query=str(self.query),
-            categories=["ALL", "NON_SHOPIFY"],
-            #categories=["ALL"]
-            # + search_cats,
+            #categories=["ALL", "NON_SHOPIFY"],
+            categories=["ALL"]
+             + search_cats,
             k=40 if "num" not in self.query_params else int(self.query_params["num"]),
         )
 
