@@ -105,7 +105,23 @@ class WhoHandler(NLWebHandler):
         resp.raise_for_status()
         return resp.json()
 
-    async def piScoreItem(self, description: str) -> int:
+    async def crossEncodeItem(self, formatted_description: str) -> float:
+        resp = await self.client.post(
+            "https://api.withpi.ai/v1/search/query_to_passage/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-hotswaps": "pi-cross-encoder-small:pi-cross-encoder-qwen",
+                "x-model-override": "pi-cross-encoder-qwen:modal:https://pilabs-qwen--pi-modelserver-scorermodel-invocations.modal.run",
+            },
+            json={
+                "query": self.query,
+                "passages": [formatted_description],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()[0]
+
+    async def piScoreItem(self, description: str, query_annotations) -> int:
         try:
             formatted_description = json.dumps(
                 json.loads(description), indent=2, ensure_ascii=False
@@ -113,87 +129,59 @@ class WhoHandler(NLWebHandler):
         except:
             formatted_description = description
 
+        ce_score = await self.crossEncodeItem(formatted_description)
+
+        scoring_spec = []
+        for category, score in query_annotations.items():
+            if score > 0.8:
+                scoring_spec.append(
+                    {
+                        "question": f"Is the response about {category}?",
+                        "label": category,
+                        "weight": 1.0,
+                    }
+                )
+        if len(scoring_spec) > 0:
+            resp = await self.client.post(
+                "https://api.withpi.ai/v1/scoring_system/score",
+                headers={
+                    "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                    "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+                },
+                json={
+                    # "llm_input": self.query,
+                    "llm_input": "",
+                    "llm_output": formatted_description,
+                    "scoring_spec": scoring_spec,
+                },
+            )
+            resp.raise_for_status()
+            pi_score = resp.json()["total_score"]
+
+            ce_weight = 0.4
+            return int(((pi_score + ce_weight * ce_score) / (1.0 + ce_weight)) * 100)
+        else:
+            return ce_score * 100
+
+    async def queryClassify(self, scoring_spec) -> dict:
         resp = await self.client.post(
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+                # "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
             },
             json={
-                "llm_input": self.query,
-                "llm_output": formatted_description,
-                "scoring_spec": [
-                    {
-                        "question": "Is the response relevant to the input?",
-                        "label": "Relevance1",
-                        "weight": 1.0,
-                        "parameters": [
-                            0.4145108510908031,
-                            0.5288173710189582,
-                            0.6881447104340327,
-                            0.7252949237751069,
-                            0.8253168287415137,
-                            0.9412728726062036,
-                        ],
-                    },
-                    {
-                        "question": "Does the response contain information that is relevant to the search query?",
-                        "label": "Relevance2",
-                        "weight": 1.0,
-                        "parameters": [
-                            0.4145108510908031,
-                            0.5288173710189582,
-                            0.6881447104340327,
-                            0.7252949237751069,
-                            0.8253168287415137,
-                            0.9412728726062036,
-                        ],
-                    },
-                    {
-                        "question": "Is the response appropriate given the context of the input?",
-                        "label": "Relevance3",
-                        "weight": 1.0,
-                        "parameters": [
-                            0.4145108510908031,
-                            0.5288173710189582,
-                            0.6881447104340327,
-                            0.7252949237751069,
-                            0.8253168287415137,
-                            0.9412728726062036,
-                        ],
-                    },
-                    {
-                        "question": "Would the response satisfy the request made in the input?",
-                        "label": "Relevance4",
-                        "weight": 1.0,
-                        "parameters": [
-                            0.4145108510908031,
-                            0.5288173710189582,
-                            0.6881447104340327,
-                            0.7252949237751069,
-                            0.8253168287415137,
-                            0.9412728726062036,
-                        ],
-                    },
-                    {
-                        "question": "Is the central theme of the query clearly stated in the response?",
-                        "label": "Central Theme Clarity",
-                        "weight": 1.0,
-                        "parameters": [
-                            0.4145108510908031,
-                            0.5288173710189582,
-                            0.6881447104340327,
-                            0.7252949237751069,
-                            0.8253168287415137,
-                            0.9412728726062036,
-                        ],
-                    },
-                ],
+                "llm_input": "",
+                "llm_output": json.dumps({"query": self.query}, indent=2),
+                "scoring_spec": scoring_spec,
             },
         )
         resp.raise_for_status()
         score_result = resp.json()
-        return int(score_result["total_score"] * 100)
+
+        print(f"QUERY CLASSIFICATION: {score_result=}")
+
+        return score_result
 
     def getFirst(self, field: list[str] | str) -> str:
         if isinstance(field, list):
@@ -222,10 +210,10 @@ class WhoHandler(NLWebHandler):
         else:
             return str(schema_org)
 
-    async def rankItem(self, url, json_str, name, site):
+    async def rankItem(self, url, json_str, name, site, query_annotations):
         """Rank a single site for relevance to the query."""
         description = trim_json(json_str)
-        pi_score = await self.piScoreItem(str(description))
+        pi_score = await self.piScoreItem(str(description), query_annotations)
         ranking = {
             "score": pi_score,
             "description": self.getDescription(description),
@@ -289,22 +277,51 @@ class WhoHandler(NLWebHandler):
         # Search using the special nlweb_sites collection
         items = await LOCAL_CORPUS.search(
             str(self.query),
-            k=100 if "num" not in self.query_params else int(self.query_params["num"]),
+            k=40 if "num" not in self.query_params else int(self.query_params["num"]),
         )
 
         # self.final_retrieved_items = items
         print(f"\n=== WHO HANDLER: Retrieved {len(items)} items from nlweb_sites ===")
 
-        tasks = []
-        cross_encoded = None
-        async with asyncio.TaskGroup() as tg:
-            json_strs = []
-            for url, json_str, name, site in items:
-                json_strs.append(json_str)
-                tasks.append(tg.create_task(self.rankItem(url, json_str, name, site)))
-            cross_encoded = tg.create_task(self.crossEncodeItems(json_strs))
+        query_annotations = await self.queryClassify(
+            scoring_spec=[
+                {
+                    "question": "Is the query about recipes?",
+                    "label": "recipes",
+                    "weight": 1.0,
+                },
+                {
+                    "question": "Is the query about travels?",
+                    "label": "travels",
+                    "weight": 1.0,
+                },
+                {
+                    "question": "Is the query about movies?",
+                    "label": "movies",
+                    "weight": 1.0,
+                },
+                {
+                    "question": "Is the query about events?",
+                    "label": "events",
+                    "weight": 1.0,
+                },
+                {
+                    "question": "Is the query about education?",
+                    "label": "education",
+                    "weight": 1.0,
+                },
+            ]
+        )
+        query_annotations = query_annotations["question_scores"]
 
-        print(f"{cross_encoded.result()=}")
+        tasks = []
+        async with asyncio.TaskGroup() as tg:
+            for url, json_str, name, site in items:
+                tasks.append(
+                    tg.create_task(
+                        self.rankItem(url, json_str, name, site, query_annotations)
+                    )
+                )
 
         # Use min_score from handler if available, otherwise default to 51
         min_score_threshold = getattr(self, "min_score", 51)
