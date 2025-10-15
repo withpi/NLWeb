@@ -83,70 +83,28 @@ class WhoHandler(NLWebHandler):
         # Call parent class's send_message with modified message
         await super().send_message(message)
 
-    async def crossEncodeItems(self, descriptions: list[str]) -> list[float]:
+    async def piScoreItem(self, description: str, query_annotations) -> int:
         try:
-            formatted_descriptions = [
-                json.dumps(json.loads(description), indent=2, ensure_ascii=False)
-                for description in descriptions
-            ]
+            formatted_description = json.dumps(
+                json.loads(description), indent=2, ensure_ascii=False
+            )
         except:
-            formatted_descriptions = descriptions
+            formatted_description = description
 
-        resp = await self.client.post(
-            "https://api.withpi.ai/v1/search/query_to_passage/score",
-            headers={
-                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-hotswaps": "pi-cross-encoder-small:pi-cross-encoder-qwen",
-                "x-model-override": "pi-cross-encoder-qwen:modal:https://pilabs-qwen--pi-modelserver-scorermodel-invocations.modal.run",
-            },
-            json={
-                "query": self.query,
-                "passages": formatted_descriptions,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    async def crossEncodeItem(self, formatted_description: str) -> float:
-        resp = await self.client.post(
-            "https://api.withpi.ai/v1/search/query_to_passage/score",
-            headers={
-                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-hotswaps": "pi-cross-encoder-small:pi-cross-encoder-qwen",
-                "x-model-override": "pi-cross-encoder-qwen:modal:https://pilabs-qwen--pi-modelserver-scorermodel-invocations.modal.run",
-            },
-            json={
-                "query": self.query,
-                "passages": [formatted_description],
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()[0]
-
-    async def crossEncodeItemUsingPiScore(self, formatted_description: str) -> float:
-        resp = await self.client.post(
-            "https://api.withpi.ai/v1/scoring_system/score",
-            headers={
-                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
-                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
-            },
-            json={
-                "llm_input": self.query,
-                "llm_output": formatted_description,
-                "scoring_spec": [
+        scoring_spec = [{
+            "question": "Is the response relevant to the input?",
+            "label": "Relevance",
+            "weight": 1.0,
+        }]
+        for category, score in query_annotations.items():
+            if score > self.query_classification_threshold:
+                scoring_spec.append(
                     {
-                        "question": "Is the response relevant to the input?",
-                        "label": "Relevance",
+                        "question": f"Is the response about {category}?",
+                        "label": category,
                         "weight": 1.0,
                     }
-                ],
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()["total_score"]
-    
-    async def callPiScorer(self, formatted_description: str, scoring_spec: list) -> float:
+                )
         resp = await self.client.post(
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
@@ -161,42 +119,14 @@ class WhoHandler(NLWebHandler):
             },
         )
         resp.raise_for_status()
-        return resp.json()["total_score"]
-
-    async def piScoreItem(self, description: str, query_annotations) -> int:
-        try:
-            formatted_description = json.dumps(
-                json.loads(description), indent=2, ensure_ascii=False
-            )
-        except:
-            formatted_description = description
-
-        scoring_spec = []
-        for category, score in query_annotations.items():
-            if score > self.query_classification_threshold:
-                scoring_spec.append(
-                    {
-                        "question": f"Is the response about {category}?",
-                        "label": category,
-                        "weight": 1.0,
-                    }
-                )
-        pi_task = None
-        async with asyncio.TaskGroup() as tg:
-            # ce_task = tg.create_task(self.crossEncodeItem(formatted_description))
-            ce_task = tg.create_task(
-                self.crossEncodeItemUsingPiScore(formatted_description)
-            )
-            if len(scoring_spec) > 0:
-                pi_task = tg.create_task(
-                    self.callPiScorer(formatted_description, scoring_spec)
-                )
-        if pi_task is not None:
-            ce_score = ce_task.result()
-            pi_score = pi_task.result()        
+        question_scores = resp.json()["question_scores"]
+        ce_score = question_scores.pop("Relevance", 0.0)
+        pi_score = sum(question_scores.values()) / len(question_scores) if len(question_scores) > 0 else None
+        
+        if pi_score is not None:
             ce_weight = 0.4
             return int(((pi_score + ce_weight * ce_score) / (1.0 + ce_weight)) * 100)
-        return int(ce_task.result() * 100)
+        return int(ce_score * 100)
 
     async def queryClassify(self, scoring_spec) -> dict:
         resp = await self.client.post(
