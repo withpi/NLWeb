@@ -672,8 +672,8 @@ def build_qid_to_results(
                     snippet_str = str(snippet)[:100]
                     ranked_snippets.append(snippet_str)
                     
-                    # Extract URL
-                    url = schema_obj.get("url", "")
+                    # URL comes from top-level item, not schema_obj (schema["url"] is unreliable)
+                    url = item["url"]
                     ranked_urls.append(str(url))
                 except Exception:
                     ranked_categories.append("unknown")
