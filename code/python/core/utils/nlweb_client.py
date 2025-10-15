@@ -306,8 +306,11 @@ def _extract_site_info(item: Dict[str, Any]) -> Dict[str, Any]:
         Simplified site object with domain, name, score, etc.
     """
     # Extract domain from schema_object.url or from the url parameter
-    schema_obj = item.get('schema_object', {})
+    schema_text = item.get('schema_object', {})
+    schema_obj = schema_text if isinstance(schema_text, dict) else json.loads(schema_text or '{}')
     domain = schema_obj.get('url', '')
+
+    # domain = domain.replace('https://', '')
     
     # If domain not in schema_object, try to extract from url parameter
     if not domain:
@@ -425,4 +428,3 @@ async def sites_from_who_streaming(endpoint: str, query: str, **kwargs) -> Async
                     except json.JSONDecodeError as e:
                         logger.warning(f"Failed to parse SSE data: {e}")
                         continue
-
