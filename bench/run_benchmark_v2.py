@@ -86,6 +86,13 @@ def default_get_doc_id(schema_object: str) -> int:
         if not original_url:
             print(f"Unknown docid! Returning -1. Object: {schema_object}")
             return -1
+        
+        # Normalize URL to include protocol prefix. The corpus dataset stores URLs with https://
+        # but the API may return bare domains like "who.int/news/item/..." without protocol.
+        # Without normalization, lookup fails because "who.int/..." != "https://who.int/..."
+        if not original_url.startswith(('http://', 'https://')):
+            original_url = f"https://{original_url}"
+        
         return _url_to_corpus_id_map().get(original_url, -1)
     except Exception:
         print(f"Unknown docid! Returning -1. Object: {schema_object}")
@@ -251,6 +258,7 @@ class PerQueryEval:
     binary_rels: List[int]  # aligned with retrieved_doc_ids
     categories: List[str]  # aligned with retrieved_doc_ids - extracted from schema_object
     snippets: List[str]  # aligned with retrieved_doc_ids - text preview of document
+    urls: List[str]  # aligned with retrieved_doc_ids - document URLs
 
 
 def evaluate(
@@ -258,6 +266,7 @@ def evaluate(
     qid_to_results: Dict[int, List[int]],
     qid_to_categories: Dict[int, List[str]],
     qid_to_snippets: Dict[int, List[str]],
+    qid_to_urls: Dict[int, List[str]],
     max_k_for_curve: int = 100,
 ) -> Tuple[np.ndarray, pd.DataFrame, pd.DataFrame, List[PerQueryEval], np.ndarray]:
     """
@@ -272,8 +281,9 @@ def evaluate(
         results = qid_to_results.get(qid, [])
         categories = qid_to_categories.get(qid, ["unknown"] * len(results))
         snippets = qid_to_snippets.get(qid, [""] * len(results))
+        urls = qid_to_urls.get(qid, [""] * len(results))
         rels = [1 if doc_id in gt_set else 0 for doc_id in results]
-        per_query.append(PerQueryEval(qid, len(gt_set), results, rels, categories, snippets))
+        per_query.append(PerQueryEval(qid, len(gt_set), results, rels, categories, snippets, urls))
 
     # Filter out queries with zero relevant docs (avoid divide-by-zero in recall)
     eval_qs = [pq for pq in per_query if pq.num_relevant > 0]
@@ -525,16 +535,20 @@ def print_ranking_pattern_analysis_terminal(
         print("-" * 150)
         
         # Detailed list of every document
-        for rank, (doc_id, is_relevant, category, snippet) in enumerate(zip(
+        for rank, (doc_id, is_relevant, category, snippet, url) in enumerate(zip(
             pq_all.retrieved_doc_ids,
             pq_all.binary_rels,
             pq_all.categories,
-            pq_all.snippets
+            pq_all.snippets,
+            pq_all.urls
         ), start=1):
             relevant_marker = "[✓]" if is_relevant else "[ ]"
             snippet_display = snippet if snippet else "(no text)"
+            url_display = url if url else "(no url)"
             # Category can be quite long now with multiple categories joined by " + "
-            print(f" {rank:3d}. {relevant_marker} Category={category:<50} {repr(snippet_display)}")
+            print(f" {rank:3d}. {relevant_marker} Category={category:<50}")
+            print(f"         URL: {url_display}")
+            print(f"         Text: {repr(snippet_display)}")
         
         print("=" * 150)
 
@@ -630,10 +644,11 @@ def build_qid_to_results(
     get_doc_id_fn: Callable[[str], int],
     throttle: float = 0.0,
     timeout: float = 30.0,
-) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]]]:
+) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[str]]]:
     qid_to_results: Dict[int, List[int]] = {}
     qid_to_categories: Dict[int, List[str]] = {}
     qid_to_snippets: Dict[int, List[str]] = {}
+    qid_to_urls: Dict[int, List[str]] = {}
 
     for q in tqdm(queries, desc="Querying API"):
         payload = call_api(base_url, q.text, timeout=timeout)
@@ -643,6 +658,7 @@ def build_qid_to_results(
         ranked_doc_ids: List[int] = []
         ranked_categories: List[str] = []
         ranked_snippets: List[str] = []
+        ranked_urls: List[str] = []
         
         for item in results:
             # Prefer 'schema_object' string if present; else pass the whole item as JSON string.
@@ -656,7 +672,7 @@ def build_qid_to_results(
                 docid = int(get_doc_id_fn(schema_obj_str))
                 ranked_doc_ids.append(docid)
                 
-                # Extract category and snippet from schema_object
+                # Extract category, snippet, and url from schema_object
                 try:
                     schema_obj = json.loads(schema_obj_str) if isinstance(schema_obj_str, str) else schema_obj_str
                     
@@ -677,9 +693,14 @@ def build_qid_to_results(
                     # Truncate to 100 chars
                     snippet_str = str(snippet)[:100]
                     ranked_snippets.append(snippet_str)
+                    
+                    # Extract URL
+                    url = schema_obj.get("url", "")
+                    ranked_urls.append(str(url))
                 except Exception:
                     ranked_categories.append("unknown")
                     ranked_snippets.append("")
+                    ranked_urls.append("")
             except Exception:
                 # Skip items that fail mapping
                 continue
@@ -687,11 +708,12 @@ def build_qid_to_results(
         qid_to_results[q.query_id] = ranked_doc_ids
         qid_to_categories[q.query_id] = ranked_categories
         qid_to_snippets[q.query_id] = ranked_snippets
+        qid_to_urls[q.query_id] = ranked_urls
 
         if throttle > 0:
             time.sleep(throttle)
 
-    return qid_to_results, qid_to_categories, qid_to_snippets
+    return qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls
 
 
 def main():
@@ -737,7 +759,7 @@ def main():
         get_doc_id_fn = default_get_doc_id
 
     # Run evaluation queries
-    qid_to_results, qid_to_categories, qid_to_snippets = build_qid_to_results(
+    qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls = build_qid_to_results(
         queries=queries,
         base_url=args.base_url,
         get_doc_id_fn=get_doc_id_fn,
@@ -757,6 +779,7 @@ def main():
         qid_to_results=qid_to_results,
         qid_to_categories=qid_to_categories,
         qid_to_snippets=qid_to_snippets,
+        qid_to_urls=qid_to_urls,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_all = len([pq for pq in per_query_all if pq.num_relevant > 0])
@@ -768,6 +791,7 @@ def main():
         qid_to_results=qid_to_results,
         qid_to_categories=qid_to_categories,
         qid_to_snippets=qid_to_snippets,
+        qid_to_urls=qid_to_urls,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_crit = len([pq for pq in per_query_crit if pq.num_relevant > 0])
