@@ -123,6 +123,28 @@ class WhoHandler(NLWebHandler):
         resp.raise_for_status()
         return resp.json()[0]
 
+    async def crossEncodeItemUsingPiScore(self, formatted_description: str) -> float:
+        resp = await self.client.post(
+            "https://api.withpi.ai/v1/scoring_system/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+            },
+            json={
+                "llm_input": self.query,
+                "llm_output": formatted_description,
+                "scoring_spec": [
+                    {
+                        "question": "Is the response relevant to the input?",
+                        "label": "Relevance",
+                        "weight": 1.0,
+                    }
+                ],
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["total_score"]
+
     async def piScoreItem(self, description: str, query_annotations) -> int:
         try:
             formatted_description = json.dumps(
@@ -131,7 +153,8 @@ class WhoHandler(NLWebHandler):
         except:
             formatted_description = description
 
-        ce_score = await self.crossEncodeItem(formatted_description)
+        # ce_score = await self.crossEncodeItem(formatted_description)
+        ce_score = await self.crossEncodeItemUsingPiScore(formatted_description)
 
         scoring_spec = []
         for category, score in query_annotations.items():
