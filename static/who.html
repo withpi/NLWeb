@@ -275,7 +275,7 @@
         this.eventSource = null;
         this.allResults = []; // Accumulate all results for re-sorting
         this.aiResponses = []; // Keep AI responses separate
-        this.queryHistory = []; // Track query history for context
+        // this.queryHistory = []; // Track query history for context
 
         // Initialize UI helper
         this.uiHelper = new ChatUICommon({
@@ -283,7 +283,7 @@
         });
 
         // Initialize JsonRenderer for consistent item display (with scores shown for WHO results)
-        this.jsonRenderer = new JsonRenderer({ showScores: true });
+        this.jsonRenderer = new JsonRenderer({ showScores: false });
 
         // Initialize sample queries from imported array
         this.initializeSampleQueries();
@@ -342,6 +342,7 @@
         this.resultsContainer.innerHTML = '';
         
         // Display conversation history
+        /*
         if (this.queryHistory.length > 0) {
           const historyDiv = document.createElement('div');
           historyDiv.style.cssText = 'margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-radius: 8px;';
@@ -355,6 +356,7 @@
           
           this.resultsContainer.appendChild(historyDiv);
         }
+        */
         
         // Display current query
         const currentQueryDiv = document.createElement('div');
@@ -396,10 +398,10 @@
           });
           
           // Add previous queries for context (limit to last 3 queries)
-          if (this.queryHistory.length > 0) {
-            const recentQueries = this.queryHistory.slice(-3);
-            params.append('prev_queries', JSON.stringify(recentQueries));
-          }
+          // if (this.queryHistory.length > 0) {
+          //   const recentQueries = this.queryHistory.slice(-3);
+          //   params.append('prev_queries', JSON.stringify(recentQueries));
+          // }
 
           const url = `/who?${params.toString()}`;
           
@@ -427,7 +429,7 @@
               // Handle different message types
               if (data.message_type === 'complete') {
                 // Stream is complete - add query to history
-                this.queryHistory.push(currentQuery);
+                // this.queryHistory.push(currentQuery);
                 // Clear the input for next query
                 this.queryInput.value = '';
                 this.cleanup();  // Use cleanup to properly reset state
