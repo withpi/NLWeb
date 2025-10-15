@@ -14,12 +14,14 @@ TARGET_SPLIT = "train"
 # Example: RATINGS_JSON = { "0": {"https://example.com": 1.0}, "1": {...}, ... }
 # If you prefer a file, set RATINGS_JSON_PATH and leave RATINGS_JSON=None.
 RATINGS_JSON: Dict[str, Dict[str, float]] = {
+  # 0: I am interested in chai with interesting spices
   "0": {
     "https://https://strand-tea-company.myshopify.com": 1.0,
     "https://marketspice_com": 1.0,
     "https://https://black-majestea-llc.myshopify.com": 1.0,
     "https://strand-tea-company.myshopify.com": 1.0
   },
+  # 1: equipment for making coffee, especially light roasts from South America
   "1": {
     "https://https://mule-coffee.myshopify.com": 1.0,
     "https://https://espresso-doctor.myshopify.com": 1.0,
@@ -33,6 +35,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://vervecoffee.com": 1.0,
     "https://clivecoffee.com": 1.0
   },
+  # 2: equipment for making tandoori roti at home. I am especially interested in the ones that don't require the dough to be fermented for a long time
   "2": {
     "https://https://wood-stone-corporation.myshopify.com": 0.5,
     "https://tandoorstore.myshopify.com": 1.0,
@@ -42,6 +45,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://burnproject.myshopify.com": 1.0,
     "https://https://cattailswoodwork.myshopify.com": 0.5
   },
+  # 3: gifts that would be appropriate for toddlers
   "3": {
     "https://https://deltaplayground.myshopify.com": 1.0,
     "https://https://shopsimplybaby.myshopify.com": 1.0,
@@ -69,6 +73,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://shopbosfiremuseum.myshopify.com": 1.0,
     "https://https://minecraftshopmkds-com.myshopify.com": 1.0
   },
+  # 4: I am interested in making gluten free bread. What kind of special equipment do I need?
   "4": {
     "https://https://novaspantry.myshopify.com": 1.0,
     "https://freeflowerco.myshopify.com": 0.5,
@@ -76,6 +81,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://wood-stone-corporation.myshopify.com": 0.5,
     "https://wood-stone-corporation.myshopify.com": 0.5
   },
+  # 5: I am interested in making Kyoto style pottery. Where can I find the kind of blue glaze they use?
   "5": {
     "https://seattle-pottery-supply.myshopify.com": 1.0,
     "https://penguinpottery.myshopify.com": 1.0,
@@ -86,10 +92,12 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://ceramic-supply-inc.myshopify.com": 1.0,
     "https://https://vogueporcelainproducts.myshopify.com": 1.0
   },
+  # 6: I like making jams when there are plenty of fruits and keeping them for the winter. I need nice containers for storing them
   "6": {
     "https://theme425-kitchen-supplies.myshopify.com": 1.0,
     "https://cultured-living.myshopify.com": 1.0
   },
+  # 7: interesting tea varieties with spices
   "7": {
     "https://https://especias-del-sol.myshopify.com": 1.0,
     "https://https://strand-tea-company.myshopify.com": 1.0,
@@ -121,12 +129,14 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://soul-fire-farm.myshopify.com": 0.5,
     "https://julytea.no": 1.0
   },
+  # 8: My friend is into sewing. She is especially interested in making bags that can be used to carry laptops. Suggest gifts for her
   "8": {
     "https://https://cherishing-today.myshopify.com": 1.0,
     "https://leabu-sewing-center.myshopify.com": 1.0,
     "https://https://tamarasjoy.myshopify.com": 0.5,
     "https://craftyangelshop.myshopify.com": 1.0
   },
+  # 9: olive oil cake recipes
   "9": {
     "https://mediterranean_dish": 1.0,
     "https://delish": 1.0,
@@ -136,9 +146,11 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://chefd.com": 0.5,
     "https://seriouseats": 1.0
   },
+  # 10: houses for sale in my area under 750k
   "10": {
     "https://zillow": 1.0
   },
+  # 11: Smoked salmon cured with dill and brown sugar
   "11": {
     "https://https://brixham-fishmonger.myshopify.com": 1.0,
     "https://https://orcas-food-coop.myshopify.com": 1.0,
@@ -150,6 +162,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://seafood-express-inc.myshopify.com": 0.5,
     "https://orcas-food-coop.myshopify.com": 0.5
   },
+  # 12: Mediterranean herbs like oregano and thyme from Greece
   "12": {
     "https://https://gus-greek-seasoning.myshopify.com": 1.0,
     "https://https://pylianestates.myshopify.com": 0.5,
@@ -178,40 +191,48 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://burlap-barrel.myshopify.com": 0.5,
     "https://rumispice.com": 0.5
   },
+  # 13: Podcasts about teenage screen usage
   "13": {
     "https://commonsensemedia": 0.5,
     "https://npr_podcasts": 1.0,
     "https://nytimes": 1.0,
     "https://med_podcast": 0.5
   },
+  # 14: Movies for teenagers about shopping or food
   "14": {
     "https://imdb": 1.0,
     "https://commonsensemedia": 0.5,
     "https://movie_data": 1.0,
     "https://scifi_movies": 0.5
   },
+  # 15: jam filled gluten free cake recipe
   "15": {
     "https://delish": 1.0,
     "https://bon_appetit": 1.0,
     "https://chefd.com": 0.5
   },
+  # 16: trails with olive trees in italy
   "16": {
     "https://alltrails": 1.0,
     "https://tripadvisor": 1.0
   },
+  # 17: I have trouble sleeping. can you give a list of top headphones that can act as sleeping aid
   "17": {
     "https://wirecutter": 1.0,
     "https://https://os-trnz.myshopify.com": 0.5,
     "https://https://mbt4hs-xg.myshopify.com": 0.5
   },
+  # 18: I got some spices from a shop, now I want to make some delicious food. Can you recommend recipes
   "18": {
     "https://bon_appetit": 1.0,
     "https://hebbarskitchen": 1.0,
     "https://delish": 1.0
   },
+  # 19: food festival events with jams, spices etc. in my area in the next week
   "19": {
     "https://eventbrite": 1.0
   },
+  # 20: Porcelain clay suitable for throwing delicate tea cups on the wheel
   "20": {
     "https://ceramicsupplypittsburgh.com": 1.0,
     "https://https://ceramic-supply-inc.myshopify.com": 1.0,
@@ -224,6 +245,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://mysterycreekceramics.co.nz": 1.0,
     "https://ceramic-supply-chicago.myshopify.com": 1.0
   },
+  # 21: High quality saffron threads for paella and risotto dishes
   "21": {
     "https://souschef.co.uk": 1.0,
     "https://worldspicemerchants.myshopify.com": 1.0,
@@ -251,6 +273,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://makkah-market.myshopify.com": 1.0,
     "https://aafricanspices.myshopify.com": 1.0
   },
+  # 22: Bone broth in a pasta soup recipes
   "22": {
     "https://delish": 1.0,
     "https://bon_appetit": 1.0,
@@ -260,6 +283,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://chefd.com": 0.5,
     "https://mediterranean_dish": 1.0
   },
+  # 23: Handwoven baskets from natural materials like sweetgrass and willow
   "23": {
     "https://https://mexico-by-hand.myshopify.com": 1.0,
     "https://https://pauls-supplies.myshopify.com": 1.0,
@@ -269,6 +293,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://mappandthread.myshopify.com": 1.0,
     "https://https://na7xh7-9u.myshopify.com": 1.0
   },
+  # 24: japanese dishes with rice and fish with fast cooking time
   "24": {
     "https://omnivorebooks.myshopify.com": 0.5,
     "https://delish": 1.0,
