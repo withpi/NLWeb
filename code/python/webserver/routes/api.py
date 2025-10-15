@@ -174,7 +174,7 @@ async def who_handler(request: web.Request) -> web.Response:
             return response
         else:
             # Handle non-streaming response
-            handler = WhoHandler(query_params, None)
+            handler = WhoHandler(query_params, None, client=request.app['httpx'])
             result = await handler.runQuery()
             return web.json_response(result)
         
