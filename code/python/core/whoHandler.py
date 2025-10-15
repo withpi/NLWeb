@@ -174,7 +174,17 @@ class WhoHandler(NLWebHandler):
             return schema_org
         else:
             return str(schema_org)
-
+    
+    async def rankItemWithRetries(self, *args, **kwargs):
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return await self.rankItem(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error in rankItem (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    raise
+        
     async def rankItem(
         self, url, json_str, name, site, categories: list[str], query_annotations
     ):
@@ -244,6 +254,16 @@ class WhoHandler(NLWebHandler):
             # Use the new schema to create and auto-send the message
             await create_assistant_result(json_results, handler=self)
             logger.error(f"Sent {len(json_results)} results")
+
+    async def getQueryAnnotationsWithRetries(self, CATEGORIES):
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return await self.getQueryAnnotations(CATEGORIES)
+            except Exception as e:
+                logger.error(f"Error in getQueryAnnotations (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    raise
 
     async def getQueryAnnotations(self, CATEGORIES):
         # TODO: condition on shopping or not shopping
@@ -398,14 +418,14 @@ class WhoHandler(NLWebHandler):
         k = 60 if "num" not in self.query_params else int(self.query_params["num"])
         print(f"Search k: {k}")
         async with asyncio.TaskGroup() as tg:
-            items_task = tg.create_task(LOCAL_CORPUS.search(
+            items_task = tg.create_task(LOCAL_CORPUS.searchWithRetries(
                 query=str(self.query),
                 categories=["ALL", "NON_SHOPIFY"],
                 # categories=BASE_CATEGORIES + search_cats,
                 k=k,
                 # k=20
             ))
-            query_annotations_task = tg.create_task(self.getQueryAnnotations(CATEGORIES))
+            query_annotations_task = tg.create_task(self.getQueryAnnotationsWithRetries(CATEGORIES))
         
         items = items_task.result()
         query_annotations = query_annotations_task.result()
@@ -418,7 +438,7 @@ class WhoHandler(NLWebHandler):
             for url, json_str, name, site, categories in items:
                 tasks.append(
                     tg.create_task(
-                        self.rankItem(
+                        self.rankItemWithRetries(
                             url, json_str, name, site, categories, query_annotations
                         )
                     )

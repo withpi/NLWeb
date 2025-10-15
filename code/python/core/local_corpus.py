@@ -235,6 +235,18 @@ class LocalCorpus:
         bm25_results, scores = retriever.retrieve(query_tokens, k=k)
         return bm25_results
 
+    async def searchWithRetries(
+        self, query: str, categories: list[str], k: int = 10
+    ) -> List[dict[str, Any]]:
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return await self.search(query, categories, k)
+            except Exception as e:
+                logger.error(f"Error in search (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    raise
+
     async def search(
         self, query: str, categories: list[str], k: int = 10
     ) -> List[dict[str, Any]]:
