@@ -91,11 +91,13 @@ class WhoHandler(NLWebHandler):
         except:
             formatted_description = description
 
-        scoring_spec = [{
-            "question": "Is the response relevant to the input?",
-            "label": "Relevance",
-            "weight": 1.0,
-        }]
+        scoring_spec = [
+            {
+                "question": "Is the response relevant to the input?",
+                "label": "Relevance",
+                "weight": 1.0,
+            }
+        ]
         is_vertical_query = False
         is_shopping_doc = "myshopify.com" in url
         for category, score in query_annotations.items():
@@ -127,7 +129,11 @@ class WhoHandler(NLWebHandler):
         resp.raise_for_status()
         question_scores = resp.json()["question_scores"]
         ce_score = question_scores.pop("Relevance", 0.0)
-        pi_score = sum(question_scores.values()) / len(question_scores) if len(question_scores) > 0 else None
+        pi_score = (
+            sum(question_scores.values()) / len(question_scores)
+            if len(question_scores) > 0
+            else None
+        )
 
         if pi_score is not None:
             ce_weight = 0.4
@@ -170,7 +176,11 @@ class WhoHandler(NLWebHandler):
         if isinstance(schema_org, dict):
             if "description" in schema_org:
                 # logger.error("Description found: %s", schema_org["description"])
-                return self.getFirst(schema_org["description"])
+                return "{} ...".format(
+                    self.getFirst(schema_org["description"])
+                    .removeprefix("## PRODUCTS FOUND")
+                    .strip()[:200]
+                )
             elif "text" in schema_org:
                 return self.getFirst(schema_org["text"])
             elif "name" in schema_org:
@@ -181,7 +191,7 @@ class WhoHandler(NLWebHandler):
             return schema_org
         else:
             return str(schema_org)
-    
+
     async def rankItemWithRetries(self, *args, **kwargs):
         max_retries = 3
         for attempt in range(max_retries):
@@ -191,7 +201,7 @@ class WhoHandler(NLWebHandler):
                 logger.error(f"Error in rankItem (attempt {attempt + 1}): {e}")
                 if attempt == max_retries - 1:
                     raise
-        
+
     async def rankItem(
         self, url, json_str, name, site, categories: list[str], query_annotations
     ):
@@ -268,7 +278,9 @@ class WhoHandler(NLWebHandler):
             try:
                 return await self.getQueryAnnotations(CATEGORIES)
             except Exception as e:
-                logger.error(f"Error in getQueryAnnotations (attempt {attempt + 1}): {e}")
+                logger.error(
+                    f"Error in getQueryAnnotations (attempt {attempt + 1}): {e}"
+                )
                 if attempt == max_retries - 1:
                     raise
 
@@ -418,22 +430,26 @@ class WhoHandler(NLWebHandler):
             "Home & Garden",
             "Coffee Equipment & Brewing",
         ]
-        
+
         # CATEGORIES = SHOPPING_CATEGORIES if is_shopping else OTHER_CATEGORIES
         # print(f"Using categories: {CATEGORIES}")
         CATEGORIES = ALL_CATEGORIES
         k = 60 if "num" not in self.query_params else int(self.query_params["num"])
         print(f"Search k: {k}")
         async with asyncio.TaskGroup() as tg:
-            items_task = tg.create_task(LOCAL_CORPUS.searchWithRetries(
-                query=str(self.query),
-                categories=["ALL", "NON_SHOPIFY"],
-                # categories=BASE_CATEGORIES + search_cats,
-                k=k,
-                # k=20
-            ))
-            query_annotations_task = tg.create_task(self.getQueryAnnotationsWithRetries(CATEGORIES))
-        
+            items_task = tg.create_task(
+                LOCAL_CORPUS.searchWithRetries(
+                    query=str(self.query),
+                    categories=["ALL", "NON_SHOPIFY"],
+                    # categories=BASE_CATEGORIES + search_cats,
+                    k=k,
+                    # k=20
+                )
+            )
+            query_annotations_task = tg.create_task(
+                self.getQueryAnnotationsWithRetries(CATEGORIES)
+            )
+
         items = items_task.result()
         query_annotations = query_annotations_task.result()
 
@@ -470,12 +486,11 @@ class WhoHandler(NLWebHandler):
         )
 
         for i in range(0, len(to_send), 3):
-            subset = to_send[i:i+3]
+            subset = to_send[i : i + 3]
             string = ""
             for item in subset:
                 string += f"{item['url']:<60}"
             print(string)
-
 
         await self.sendAnswers(to_send, force=True)
         return self.return_value
