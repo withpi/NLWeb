@@ -270,6 +270,7 @@ class PerQueryEval:
     categories: List[str]  # aligned with retrieved_doc_ids - extracted from schema_object
     snippets: List[str]  # aligned with retrieved_doc_ids - text preview of document
     urls: List[str]  # aligned with retrieved_doc_ids - document URLs
+    scores: List[float]  # aligned with retrieved_doc_ids - retrieval scores
 
 
 def evaluate(
@@ -278,6 +279,7 @@ def evaluate(
     qid_to_categories: Dict[int, List[str]],
     qid_to_snippets: Dict[int, List[str]],
     qid_to_urls: Dict[int, List[str]],
+    qid_to_scores: Dict[int, List[float]],
     max_k_for_curve: int = 100,
 ) -> Tuple[np.ndarray, pd.DataFrame, pd.DataFrame, List[PerQueryEval], np.ndarray]:
     """
@@ -293,8 +295,9 @@ def evaluate(
         categories = qid_to_categories.get(qid, ["unknown"] * len(results))
         snippets = qid_to_snippets.get(qid, [""] * len(results))
         urls = qid_to_urls.get(qid, [""] * len(results))
+        scores = qid_to_scores.get(qid, [0.0] * len(results))
         rels = [1 if doc_id in gt_set else 0 for doc_id in results]
-        per_query.append(PerQueryEval(qid, len(gt_set), results, rels, categories, snippets, urls))
+        per_query.append(PerQueryEval(qid, len(gt_set), results, rels, categories, snippets, urls, scores))
 
     # Filter out queries with zero relevant docs (avoid divide-by-zero in recall)
     eval_qs = [pq for pq in per_query if pq.num_relevant > 0]
@@ -561,18 +564,20 @@ def print_ranking_pattern_analysis_terminal(
         print("-" * 150)
         
         # Detailed list of every document - ONE LINE per doc with fixed widths
-        for rank, (doc_id, is_relevant, category, snippet, url) in enumerate(zip(
+        for rank, (doc_id, is_relevant, category, snippet, url, score) in enumerate(zip(
             pq_all.retrieved_doc_ids,
             pq_all.binary_rels,
             pq_all.categories,
             pq_all.snippets,
-            pq_all.urls
+            pq_all.urls,
+            pq_all.scores
         ), start=1):
             relevant_marker = "[✓]" if is_relevant else "[ ]"
-            cat_display = truncate(category if category else "unknown", 40)
-            url_display = truncate(url if url else "(no url)", 40)
-            txt_display = truncate(snippet if snippet else "(no text)", 60)
-            print(f" {rank:3d}. {relevant_marker} {cat_display} {url_display} {txt_display}")
+            score_display = f"{score:6.3f}"
+            cat_display = truncate(category if category else "unknown", 35)
+            url_display = truncate(url if url else "(no url)", 35)
+            txt_display = truncate(snippet if snippet else "(no text)", 50)
+            print(f" {rank:3d}. {relevant_marker} {score_display} {cat_display} {url_display} {txt_display}")
         
         print("=" * 150)
 
@@ -668,11 +673,12 @@ def build_qid_to_results(
     get_doc_id_fn: Callable[[str], int],
     throttle: float = 0.0,
     timeout: float = 30.0,
-) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[Tuple[str, str]]]]:
+) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[str]], Dict[int, List[float]], Dict[int, List[Tuple[str, str]]]]:
     qid_to_results: Dict[int, List[int]] = {}
     qid_to_categories: Dict[int, List[str]] = {}
     qid_to_snippets: Dict[int, List[str]] = {}
     qid_to_urls: Dict[int, List[str]] = {}
+    qid_to_scores: Dict[int, List[float]] = {}
     qid_to_unmapped: Dict[int, List[Tuple[str, str]]] = {}
 
     for q in tqdm(queries, desc="Querying API"):
@@ -684,6 +690,7 @@ def build_qid_to_results(
         ranked_categories: List[str] = []
         ranked_snippets: List[str] = []
         ranked_urls: List[str] = []
+        ranked_scores: List[float] = []
         unmapped_items: List[Tuple[str, str]] = []
         
         for item in results:
@@ -703,6 +710,13 @@ def build_qid_to_results(
                     continue
                     
                 ranked_doc_ids.append(docid)
+                
+                # Extract score from item (default to 0.0 if not present)
+                score = item.get("score", 0.0)
+                try:
+                    ranked_scores.append(float(score))
+                except (ValueError, TypeError):
+                    ranked_scores.append(0.0)
                 
                 # Extract category, snippet, and url from schema_object
                 try:
@@ -743,12 +757,13 @@ def build_qid_to_results(
         qid_to_categories[q.query_id] = ranked_categories
         qid_to_snippets[q.query_id] = ranked_snippets
         qid_to_urls[q.query_id] = ranked_urls
+        qid_to_scores[q.query_id] = ranked_scores
         qid_to_unmapped[q.query_id] = unmapped_items
 
         if throttle > 0:
             time.sleep(throttle)
 
-    return qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped
+    return qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_scores, qid_to_unmapped
 
 
 def main():
@@ -805,7 +820,7 @@ def main():
             queries = [q for q in queries if q.query_id not in dev_qids]
 
     # Run evaluation queries
-    qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_unmapped = build_qid_to_results(
+    qid_to_results, qid_to_categories, qid_to_snippets, qid_to_urls, qid_to_scores, qid_to_unmapped = build_qid_to_results(
         queries=queries,
         base_url=args.base_url,
         get_doc_id_fn=default_get_doc_id,
@@ -826,6 +841,7 @@ def main():
         qid_to_categories=qid_to_categories,
         qid_to_snippets=qid_to_snippets,
         qid_to_urls=qid_to_urls,
+        qid_to_scores=qid_to_scores,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_all = len([pq for pq in per_query_all if pq.num_relevant > 0])
@@ -838,6 +854,7 @@ def main():
         qid_to_categories=qid_to_categories,
         qid_to_snippets=qid_to_snippets,
         qid_to_urls=qid_to_urls,
+        qid_to_scores=qid_to_scores,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_crit = len([pq for pq in per_query_crit if pq.num_relevant > 0])
