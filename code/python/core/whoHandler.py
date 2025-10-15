@@ -517,8 +517,12 @@ class WhoHandler(NLWebHandler):
         )
 
         for i in range(0, len(to_send), 3):
-            one, two, three = to_send[i:i+3]
-            print(f"{one['url']:<60} {two['url']:<60} {three['url']:<60}")
+            subset = to_send[i:i+3]
+            string = ""
+            for item in subset:
+                string += f"{item['url']:<60}"
+            print(string)
+
 
         await self.sendAnswers(to_send, force=True)
         return self.return_value
