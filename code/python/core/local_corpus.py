@@ -3,6 +3,7 @@
 LocalCorpus: In-memory BM25 corpus using Hugging Face datasets.
 """
 
+import asyncio
 from typing import List, Optional, Any, cast
 import logging
 import json
@@ -50,6 +51,7 @@ class LocalCorpus:
         self.split = split
         self.stemmer_language = stemmer_language
         self.stopwords = stopwords
+        self.client = get_azure_openai_client()
 
         # Initialize components
         self.stemmer = Stemmer.Stemmer(stemmer_language)
@@ -197,26 +199,14 @@ class LocalCorpus:
         if k > corpus_size:
             print(f"[internal_search] Reducing k from {k} to {corpus_size}")
             k = corpus_size
+        
+        async with asyncio.TaskGroup() as tg:
+            bm25_task = tg.create_task(asyncio.to_thread(self.getBM25Results, query, retriever, k=k))
+            embedding_task = tg.create_task(
+                self.getEmbeddingResults(query, embedding_index, k=k)
+            )
 
-        # Tokenize query
-        query_tokens = bm25s.tokenize(query, stemmer=self.stemmer)
-
-        client = get_azure_openai_client()
-
-        response = await client.embeddings.create(
-            # input="helpful websites for my search: " + query,
-            input=query,
-            model="text-embedding-3-large",
-            dimensions=1024,
-        )
-        embedding = [response.data[0].embedding]
-        query_embeddings = normalize(np.array(embedding))
-        _, embedding_results = embedding_index.search(np.array(query_embeddings), k=k)
-
-        # Retrieve top-k results
-        bm25_results, scores = retriever.retrieve(query_tokens, k=k)
-
-        results = list(set(bm25_results[0]).union(set(embedding_results[0])))
+        results = list(set(bm25_task.result()[0]).union(set(embedding_task.result()[0])))
 
         # Format results
         rows = []
@@ -225,6 +215,25 @@ class LocalCorpus:
             rows.append(corpus_structured[docid])
 
         return rows
+
+    async def getEmbeddingResults(self, query: str, embedding_index, k: int):
+        response = await self.client.embeddings.create(
+            # input="helpful websites for my search: " + query,
+            input=query,
+            model="text-embedding-3-large",
+            dimensions=1024,
+        )
+        embedding = [response.data[0].embedding]
+        query_embeddings = normalize(np.array(embedding))
+        _, embedding_results = embedding_index.search(np.array(query_embeddings), k=k)
+        return embedding_results
+
+    def getBM25Results(self, query: str, retriever, k: int):
+        # Tokenize query
+        query_tokens = bm25s.tokenize(query, stemmer=self.stemmer)
+        # Retrieve top-k results
+        bm25_results, scores = retriever.retrieve(query_tokens, k=k)
+        return bm25_results
 
     async def search(
         self, query: str, categories: list[str], k: int = 10
@@ -235,14 +244,19 @@ class LocalCorpus:
         url_to_categories = {}
         url_to_result = {}
         
-        for category in categories:
-            category_results = await self.internal_search(
-                query=query,
-                retriever=self.retriever_map[category],
-                embedding_index=self.index_map[category],
-                corpus_structured=self.corpus_structured_map[category],
-                k=k,
-            )
+        category_results_tasks = []
+        async with asyncio.TaskGroup() as tg:
+            for category in categories:
+                category_results_tasks.append((tg.create_task(self.internal_search(
+                    query=query,
+                    retriever=self.retriever_map[category],
+                    embedding_index=self.index_map[category],
+                    corpus_structured=self.corpus_structured_map[category],
+                    k=k,
+                )), category))
+
+        for task, category in category_results_tasks:
+            category_results = task.result()
             for url, json_str, name, site in category_results:
                 if url not in url_to_categories:
                     url_to_categories[url] = []

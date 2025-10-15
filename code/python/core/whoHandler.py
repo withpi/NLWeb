@@ -145,6 +145,23 @@ class WhoHandler(NLWebHandler):
         )
         resp.raise_for_status()
         return resp.json()["total_score"]
+    
+    async def callPiScorer(self, formatted_description: str, scoring_spec: list) -> float:
+        resp = await self.client.post(
+            "https://api.withpi.ai/v1/scoring_system/score",
+            headers={
+                "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
+                "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
+                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+            },
+            json={
+                "llm_input": self.query,
+                "llm_output": formatted_description,
+                "scoring_spec": scoring_spec,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["total_score"]
 
     async def piScoreItem(self, description: str, query_annotations) -> int:
         try:
@@ -153,9 +170,6 @@ class WhoHandler(NLWebHandler):
             )
         except:
             formatted_description = description
-
-        # ce_score = await self.crossEncodeItem(formatted_description)
-        ce_score = await self.crossEncodeItemUsingPiScore(formatted_description)
 
         scoring_spec = []
         for category, score in query_annotations.items():
@@ -167,28 +181,22 @@ class WhoHandler(NLWebHandler):
                         "weight": 1.0,
                     }
                 )
-        if len(scoring_spec) > 0:
-            resp = await self.client.post(
-                "https://api.withpi.ai/v1/scoring_system/score",
-                headers={
-                    "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                    "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
-                    "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
-                },
-                json={
-                    # "llm_input": self.query,
-                    "llm_input": "",
-                    "llm_output": formatted_description,
-                    "scoring_spec": scoring_spec,
-                },
+        pi_task = None
+        async with asyncio.TaskGroup() as tg:
+            # ce_task = tg.create_task(self.crossEncodeItem(formatted_description))
+            ce_task = tg.create_task(
+                self.crossEncodeItemUsingPiScore(formatted_description)
             )
-            resp.raise_for_status()
-            pi_score = resp.json()["total_score"]
-
+            if len(scoring_spec) > 0:
+                pi_task = tg.create_task(
+                    self.callPiScorer(formatted_description, scoring_spec)
+                )
+        if pi_task is not None:
+            ce_score = ce_task.result()
+            pi_score = pi_task.result()        
             ce_weight = 0.4
             return int(((pi_score + ce_weight * ce_score) / (1.0 + ce_weight)) * 100)
-        else:
-            return ce_score * 100
+        return int(ce_task.result() * 100)
 
     async def queryClassify(self, scoring_spec) -> dict:
         resp = await self.client.post(
