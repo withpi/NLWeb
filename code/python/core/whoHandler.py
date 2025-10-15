@@ -32,7 +32,7 @@ class WhoHandler(NLWebHandler):
         # Keep prev_queries for context if provided
         super().__init__(query_params, http_handler)
 
-        self.query_classification_threshold = 0.1
+        self.query_classification_threshold = 0.4
 
     def _build_nlweb_url(self, site_url, site_type=None):
         """Helper function to build the complete NLWEB URL with all parameters."""
@@ -212,7 +212,9 @@ class WhoHandler(NLWebHandler):
         else:
             return str(schema_org)
 
-    async def rankItem(self, url, json_str, name, site, categories: list[str], query_annotations):
+    async def rankItem(
+        self, url, json_str, name, site, categories: list[str], query_annotations
+    ):
         """Rank a single site for relevance to the query."""
         description = trim_json(json_str)
         pi_score = await self.piScoreItem(str(description), query_annotations)
@@ -224,7 +226,7 @@ class WhoHandler(NLWebHandler):
 
         # Handle both string and dictionary inputs for json_str
         schema_object = json_str if isinstance(json_str, dict) else json.loads(json_str)
-        
+
         # Add WHO classification categories to schema_object (list of all categories that found this doc)
         # This is just to help the benchmark understand the underlying classification.
         schema_object["who_categories"] = categories
@@ -254,7 +256,9 @@ class WhoHandler(NLWebHandler):
                 "url": result["url"],
                 "name": result["name"],
                 "score": result["ranking"]["score"],
-                "schema_object": json.dumps(schema_obj),  # Include full schema_object with who_category
+                "schema_object": json.dumps(
+                    schema_obj
+                ),  # Include full schema_object with who_category
             }
 
             # Include description if available
@@ -299,46 +303,53 @@ class WhoHandler(NLWebHandler):
         #     "Jewelry & Watches",
         #     "Toys, Hobbies & Collectibles",
         # ]
-        # CATEGORIES = ["recipes", "travels", "movies", "events", "education"]
         ALL_CATEGORIES = [
-            "Travel & Events",
-            "Bags & Leather",
-            "Kitchen & Culinary Tools",
-            "Japanese Culture & Goods",
-            "Restaurants & Dining",
-            "Home & Garden",
-            "Beverages",
-            "Education & Research",
-            "Textiles & Crafts",
-            "Apparel & Accessories",
-            "Cooking & Food Media",
-            "Ceramics & Pottery",
-            "Health & Wellness",
-            "Home & Lifestyle",
-            "Pets & Aquatics",
-            "Real Estate",
-            "Baby & Kids",
-            "Meals & Nutrition",
-            "Sports & Outdoor",
-            "General & Misc",
-            "Crafts & Sewing",
-            "Toys, Hobbies & Collectibles",
-            "Jewelry & Watches",
-            "Culinary Ingredients & Pantry",
-            "Garden & Botanicals",
-            "Nutrition & Supplements",
-            "Beauty & Personal Care",
-            "Food & Beverage",
-            "Business & Industrial",
-            "Apparel & Lifestyle",
-            "Kitchen Tools & Utensils",
-            "Media & Entertainment",
-            "Packaged Foods & Snacks",
-            "Books & Media",
-            "Smoke & Vape",
-            "Services & Education",
-            "Coffee Equipment & Brewing",
+            "recipes",
+            "travels",
+            "movies",
+            "events",
+            "education",
+            "podcasts",
         ]
+        # ALL_CATEGORIES = [
+        #     "Travel & Events",
+        #     "Bags & Leather",
+        #     "Kitchen & Culinary Tools",
+        #     "Japanese Culture & Goods",
+        #     "Restaurants & Dining",
+        #     "Home & Garden",
+        #     "Beverages",
+        #     "Education & Research",
+        #     "Textiles & Crafts",
+        #     "Apparel & Accessories",
+        #     "Cooking & Food Media",
+        #     "Ceramics & Pottery",
+        #     "Health & Wellness",
+        #     "Home & Lifestyle",
+        #     "Pets & Aquatics",
+        #     "Real Estate",
+        #     "Baby & Kids",
+        #     "Meals & Nutrition",
+        #     "Sports & Outdoor",
+        #     "General & Misc",
+        #     "Crafts & Sewing",
+        #     "Toys, Hobbies & Collectibles",
+        #     "Jewelry & Watches",
+        #     "Culinary Ingredients & Pantry",
+        #     "Garden & Botanicals",
+        #     "Nutrition & Supplements",
+        #     "Beauty & Personal Care",
+        #     "Food & Beverage",
+        #     "Business & Industrial",
+        #     "Apparel & Lifestyle",
+        #     "Kitchen Tools & Utensils",
+        #     "Media & Entertainment",
+        #     "Packaged Foods & Snacks",
+        #     "Books & Media",
+        #     "Smoke & Vape",
+        #     "Services & Education",
+        #     "Coffee Equipment & Brewing",
+        # ]
         SHOPPING_CATEGORIES = [
             "Bags & Leather",
             "Kitchen & Culinary Tools",
@@ -437,15 +448,15 @@ class WhoHandler(NLWebHandler):
         # search_cats = [
         #        category for category, score in query_annotations.items() if score > 0.5
         #    ]
-        k = 40 if "num" not in self.query_params else int(self.query_params["num"])
+        k = 60 if "num" not in self.query_params else int(self.query_params["num"])
         print(f"Search cat scores: {query_annotations}")
         print(f"Search cats: {search_cats}")
         print(f"Search k: {k}")
         BASE_CATEGORIES = ["ALL"]  # if is_shopping else ["NON_SHOPIFY"]
         items = await LOCAL_CORPUS.search(
             query=str(self.query),
-            # categories=["ALL", "NON_SHOPIFY"],
-            categories=BASE_CATEGORIES + search_cats,
+            categories=["ALL", "NON_SHOPIFY"],
+            # categories=BASE_CATEGORIES + search_cats,
             k=k,
             # k=20
         )
@@ -458,7 +469,9 @@ class WhoHandler(NLWebHandler):
             for url, json_str, name, site, categories in items:
                 tasks.append(
                     tg.create_task(
-                        self.rankItem(url, json_str, name, site, categories, query_annotations)
+                        self.rankItem(
+                            url, json_str, name, site, categories, query_annotations
+                        )
                     )
                 )
 
