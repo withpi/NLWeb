@@ -110,14 +110,14 @@ class NLWebHandler:
             self.generate_mode = get_param(query_params, "generate_mode", str, "none")
 
         # Minimum score threshold for ranking - results below this score will be filtered out
-        self.min_score = get_param(query_params, "min_score", int, 20)
+        self.min_score = get_param(query_params, "min_score", int, 1)
 
         # Minimum score threshold for ranking - results below this score will be filtered out
-        use_pi = get_param(query_params, "use_pi", str, "True")
+        use_pi = get_param(query_params, "use_pi", str, "False")
         self.use_pi = use_pi not in ["False", "false", "0", None]
 
         # Maximum number of results to return to the user
-        self.max_results = get_param(query_params, "max_results", int, 10)
+        self.max_results = get_param(query_params, "max_results", int, 100)
 
         # the items that have been retrieved from the vector database, could be before decontextualization.
         # See below notes on fasttrack
