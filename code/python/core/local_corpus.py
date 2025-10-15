@@ -190,16 +190,13 @@ class LocalCorpus:
         # --- Get corpus size and enforce bounds
         corpus_size = retriever.scores["num_docs"]
         if corpus_size is None:
-            raise RuntimeError("Cannot determine corpus size from retriever.")
-
-        # Print corpus size every time
-        print(f"[internal_search] Corpus size: {corpus_size}")
-
-        bm25_k = k
-        if bm25_k > corpus_size:
-            print(f"[internal_search] Reducing bm25_k from {k} to {corpus_size}")
-            bm25_k = corpus_size
-
+            # Fallback: use length of corpus_structured
+            corpus_size = len(corpus_structured)
+        
+        # Enforce k <= corpus_size to avoid BM25 errors
+        if k > corpus_size:
+            print(f"[internal_search] Reducing k from {k} to {corpus_size}")
+            k = corpus_size
 
         # Tokenize query
         query_tokens = bm25s.tokenize(query, stemmer=self.stemmer)
@@ -217,7 +214,7 @@ class LocalCorpus:
         _, embedding_results = embedding_index.search(np.array(query_embeddings), k=k)
 
         # Retrieve top-k results
-        bm25_results, scores = retriever.retrieve(query_tokens, k=bm25_k)
+        bm25_results, scores = retriever.retrieve(query_tokens, k=k)
 
         results = list(set(bm25_results[0]).union(set(embedding_results[0])))
 
@@ -232,18 +229,33 @@ class LocalCorpus:
     async def search(
         self, query: str, categories: list[str], k: int = 10
     ) -> List[dict[str, Any]]:
-        items = []
+        # Track all categories that found each URL. We do this so that we can
+        # return this from the endpoints, which allows us to see which index
+        # each result came from.
+        url_to_categories = {}
+        url_to_result = {}
+        
         for category in categories:
-            items.extend(
-                await self.internal_search(
-                    query=query,
-                    retriever=self.retriever_map[category],
-                    embedding_index=self.index_map[category],
-                    corpus_structured=self.corpus_structured_map[category],
-                    k=k,
-                )
+            category_results = await self.internal_search(
+                query=query,
+                retriever=self.retriever_map[category],
+                embedding_index=self.index_map[category],
+                corpus_structured=self.corpus_structured_map[category],
+                k=k,
             )
-        return list({x[0]: x for x in items}.values())
+            for url, json_str, name, site in category_results:
+                if url not in url_to_categories:
+                    url_to_categories[url] = []
+                    url_to_result[url] = (url, json_str, name, site)
+                url_to_categories[url].append(category)
+        
+        # Build results with aggregated categories
+        results = []
+        for url, (url, json_str, name, site) in url_to_result.items():
+            categories_list = url_to_categories[url]
+            results.append((url, json_str, name, site, categories_list))
+        
+        return results
 
     def __len__(self) -> int:
         """Return the number of documents in the corpus."""

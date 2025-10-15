@@ -35,7 +35,7 @@ import math
 import sys
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -249,11 +249,15 @@ class PerQueryEval:
     num_relevant: int
     retrieved_doc_ids: List[int]
     binary_rels: List[int]  # aligned with retrieved_doc_ids
+    categories: List[str]  # aligned with retrieved_doc_ids - extracted from schema_object
+    snippets: List[str]  # aligned with retrieved_doc_ids - text preview of document
 
 
 def evaluate(
     qid_to_gt: Dict[int, set],
     qid_to_results: Dict[int, List[int]],
+    qid_to_categories: Dict[int, List[str]],
+    qid_to_snippets: Dict[int, List[str]],
     max_k_for_curve: int = 100,
 ) -> Tuple[np.ndarray, pd.DataFrame, pd.DataFrame, List[PerQueryEval], np.ndarray]:
     """
@@ -266,8 +270,10 @@ def evaluate(
     per_query: List[PerQueryEval] = []
     for qid, gt_set in qid_to_gt.items():
         results = qid_to_results.get(qid, [])
+        categories = qid_to_categories.get(qid, ["unknown"] * len(results))
+        snippets = qid_to_snippets.get(qid, [""] * len(results))
         rels = [1 if doc_id in gt_set else 0 for doc_id in results]
-        per_query.append(PerQueryEval(qid, len(gt_set), results, rels))
+        per_query.append(PerQueryEval(qid, len(gt_set), results, rels, categories, snippets))
 
     # Filter out queries with zero relevant docs (avoid divide-by-zero in recall)
     eval_qs = [pq for pq in per_query if pq.num_relevant > 0]
@@ -473,6 +479,66 @@ def style_headers_with_colors(df: pd.DataFrame, names: List[str]) -> pd.DataFram
 # HTML
 # --------------------------
 
+def print_ranking_pattern_analysis_terminal(
+    queries: List[Query],
+    per_query_all: List[PerQueryEval],
+    per_query_crit: List[PerQueryEval],
+    cutoffs: List[int] = [1, 3, 5, 10],
+):
+    """
+    Print per-query ranking: first high-level pattern, then detailed list of documents.
+    """
+    qid_to_all = {pq.query_id: pq for pq in per_query_all}
+    
+    def make_pattern(binary_rels: List[int]) -> str:
+        if not binary_rels:
+            return "(no results)"
+        return "".join("+" if rel == 1 else "-" for rel in binary_rels)
+    
+    print("\n" + "=" * 150)
+    print("RANKING ANALYSIS")
+    print("=" * 150)
+    
+    for q in queries:
+        qid = q.query_id
+        pq_all = qid_to_all.get(qid)
+        
+        if not pq_all:
+            continue
+        
+        print(f"\nQuery: {q.text}")
+        print(f"Ranking {len(pq_all.retrieved_doc_ids)} documents | {pq_all.num_relevant} relevant in ground truth")
+        
+        # High-level pattern
+        pattern = make_pattern(pq_all.binary_rels)
+        print(f"Pattern: {pattern}")
+        
+        # Summary recall
+        found_at_cutoffs = []
+        for k in cutoffs:
+            found = sum(pq_all.binary_rels[:k])
+            total = pq_all.num_relevant
+            recall = (found / total * 100) if total > 0 else 0.0
+            found_at_cutoffs.append(f"@{k}={found}/{total}({recall:.0f}%)")
+        print(f"Recall:  {' '.join(found_at_cutoffs)}")
+        
+        print("-" * 150)
+        
+        # Detailed list of every document
+        for rank, (doc_id, is_relevant, category, snippet) in enumerate(zip(
+            pq_all.retrieved_doc_ids,
+            pq_all.binary_rels,
+            pq_all.categories,
+            pq_all.snippets
+        ), start=1):
+            relevant_marker = "[✓]" if is_relevant else "[ ]"
+            snippet_display = snippet if snippet else "(no text)"
+            # Category can be quite long now with multiple categories joined by " + "
+            print(f" {rank:3d}. {relevant_marker} Category={category:<50} {repr(snippet_display)}")
+        
+        print("=" * 150)
+
+
 def make_html_report_two_sections(
     plots: Dict[str, str],  # {"all": base64_png, "critical": base64_png}
     tables: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]],  # {"all": (recall_df, metrics_df), ...}
@@ -564,8 +630,10 @@ def build_qid_to_results(
     get_doc_id_fn: Callable[[str], int],
     throttle: float = 0.0,
     timeout: float = 30.0,
-) -> Dict[int, List[int]]:
+) -> Tuple[Dict[int, List[int]], Dict[int, List[str]], Dict[int, List[str]]]:
     qid_to_results: Dict[int, List[int]] = {}
+    qid_to_categories: Dict[int, List[str]] = {}
+    qid_to_snippets: Dict[int, List[str]] = {}
 
     for q in tqdm(queries, desc="Querying API"):
         payload = call_api(base_url, q.text, timeout=timeout)
@@ -573,6 +641,9 @@ def build_qid_to_results(
         # Expect a JSON dict with key 'content' -> list of result dicts
         results = payload.get("content", [])
         ranked_doc_ids: List[int] = []
+        ranked_categories: List[str] = []
+        ranked_snippets: List[str] = []
+        
         for item in results:
             # Prefer 'schema_object' string if present; else pass the whole item as JSON string.
             if isinstance(item, dict) and "schema_object" in item and isinstance(item["schema_object"], str):
@@ -584,16 +655,43 @@ def build_qid_to_results(
             try:
                 docid = int(get_doc_id_fn(schema_obj_str))
                 ranked_doc_ids.append(docid)
+                
+                # Extract category and snippet from schema_object
+                try:
+                    schema_obj = json.loads(schema_obj_str) if isinstance(schema_obj_str, str) else schema_obj_str
+                    
+                    # WHO categories is always a list of strings
+                    categories = schema_obj.get("who_categories", ["unknown"])
+                    category_str = " + ".join(categories)
+                    ranked_categories.append(category_str)
+                    
+                    # Extract text snippet - try multiple fields
+                    snippet = (
+                        schema_obj.get("description") or
+                        schema_obj.get("name") or
+                        schema_obj.get("text") or
+                        ""
+                    )
+                    if isinstance(snippet, list) and len(snippet) > 0:
+                        snippet = snippet[0]
+                    # Truncate to 100 chars
+                    snippet_str = str(snippet)[:100]
+                    ranked_snippets.append(snippet_str)
+                except Exception:
+                    ranked_categories.append("unknown")
+                    ranked_snippets.append("")
             except Exception:
                 # Skip items that fail mapping
                 continue
 
         qid_to_results[q.query_id] = ranked_doc_ids
+        qid_to_categories[q.query_id] = ranked_categories
+        qid_to_snippets[q.query_id] = ranked_snippets
 
         if throttle > 0:
             time.sleep(throttle)
 
-    return qid_to_results
+    return qid_to_results, qid_to_categories, qid_to_snippets
 
 
 def main():
@@ -639,7 +737,7 @@ def main():
         get_doc_id_fn = default_get_doc_id
 
     # Run evaluation queries
-    qid_to_results = build_qid_to_results(
+    qid_to_results, qid_to_categories, qid_to_snippets = build_qid_to_results(
         queries=queries,
         base_url=args.base_url,
         get_doc_id_fn=get_doc_id_fn,
@@ -657,6 +755,8 @@ def main():
     ks_curve_all, recall_df_all, metrics_df_all, per_query_all, dense_all = evaluate(
         qid_to_gt=qrels_all,
         qid_to_results=qid_to_results,
+        qid_to_categories=qid_to_categories,
+        qid_to_snippets=qid_to_snippets,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_all = len([pq for pq in per_query_all if pq.num_relevant > 0])
@@ -666,14 +766,18 @@ def main():
     ks_curve_crit, recall_df_crit, metrics_df_crit, per_query_crit, dense_crit = evaluate(
         qid_to_gt=qrels_critical,
         qid_to_results=qid_to_results,
+        qid_to_categories=qid_to_categories,
+        qid_to_snippets=qid_to_snippets,
         max_k_for_curve=args.max_k,
     )
     num_eval_queries_crit = len([pq for pq in per_query_crit if pq.num_relevant > 0])
 
     # Sanity: ks_curve should be identical; if not, align to min length
     ks_curve = ks_curve_all if len(ks_curve_all) <= len(ks_curve_crit) else ks_curve_crit
-    if len(dense_all) != len(ks_curve): dense_all = dense_all[:len(ks_curve)]
-    if len(dense_crit) != len(ks_curve): dense_crit = dense_crit[:len(ks_curve)]
+    if len(dense_all) != len(ks_curve):
+        dense_all = dense_all[:len(ks_curve)]
+    if len(dense_crit) != len(ks_curve):
+        dense_crit = dense_crit[:len(ks_curve)]
 
     # Load comparison runs (if any)
     comp_runs = load_comparison_runs(args.compare_json)
@@ -735,13 +839,24 @@ def main():
                 m = min(len(ks_curve), len(curve))
                 if m > 0:
                     plt.plot(ks_curve[:m], curve[:m], linewidth=1.8, label=name)
-            plt.xlabel("k"); plt.ylabel("Recall@k (macro avg)"); plt.title("Recall@k (macro average) — ALL")
+            plt.xlabel("k")
+            plt.ylabel("Recall@k (macro avg)")
+            plt.title("Recall@k (macro average) — ALL")
             plt.grid(True, linestyle="--", alpha=0.4)
             plt.tight_layout()
             plt.legend()
-            plt.ion(); plt.show(block=False)
+            plt.ion()
+            plt.show(block=False)
         except Exception:
             pass
+
+    # Print ranking pattern analysis to terminal
+    print_ranking_pattern_analysis_terminal(
+        queries=queries,
+        per_query_all=per_query_all,
+        per_query_crit=per_query_crit,
+        cutoffs=[1, 10, 100],
+    )
 
     # Print tables to terminal (current only for brevity)
     pd.set_option("display.max_columns", None)

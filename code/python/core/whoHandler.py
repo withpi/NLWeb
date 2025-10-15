@@ -210,7 +210,7 @@ class WhoHandler(NLWebHandler):
         else:
             return str(schema_org)
 
-    async def rankItem(self, url, json_str, name, site, query_annotations):
+    async def rankItem(self, url, json_str, name, site, categories: list[str], query_annotations):
         """Rank a single site for relevance to the query."""
         description = trim_json(json_str)
         pi_score = await self.piScoreItem(str(description), query_annotations)
@@ -222,6 +222,10 @@ class WhoHandler(NLWebHandler):
 
         # Handle both string and dictionary inputs for json_str
         schema_object = json_str if isinstance(json_str, dict) else json.loads(json_str)
+        
+        # Add WHO classification categories to schema_object (list of all categories that found this doc)
+        # This is just to help the benchmark understand the underlying classification.
+        schema_object["who_categories"] = categories
 
         # Store the result
         return {
@@ -230,6 +234,7 @@ class WhoHandler(NLWebHandler):
             "name": name,
             "ranking": ranking,
             "schema_object": schema_object,
+            "categories": categories,
             "sent": False,
         }
 
@@ -247,6 +252,7 @@ class WhoHandler(NLWebHandler):
                 "url": result["url"],
                 "name": result["name"],
                 "score": result["ranking"]["score"],
+                "schema_object": json.dumps(schema_obj),  # Include full schema_object with who_category
             }
 
             # Include description if available
@@ -396,10 +402,10 @@ class WhoHandler(NLWebHandler):
 
         tasks = []
         async with asyncio.TaskGroup() as tg:
-            for url, json_str, name, site in items:
+            for url, json_str, name, site, categories in items:
                 tasks.append(
                     tg.create_task(
-                        self.rankItem(url, json_str, name, site, query_annotations)
+                        self.rankItem(url, json_str, name, site, categories, query_annotations)
                     )
                 )
 
