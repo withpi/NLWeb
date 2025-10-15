@@ -184,35 +184,35 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://nytimes": 1.0,
     "https://med_podcast": 0.5
   },
-  "15": {
+  "14": {
     "https://imdb": 1.0,
     "https://commonsensemedia": 0.5,
     "https://movie_data": 1.0,
     "https://scifi_movies": 0.5
   },
-  "16": {
+  "15": {
     "https://delish": 1.0,
     "https://bon_appetit": 1.0,
     "https://chefd.com": 0.5
   },
-  "17": {
+  "16": {
     "https://alltrails": 1.0,
     "https://tripadvisor": 1.0
   },
-  "18": {
+  "17": {
     "https://wirecutter": 1.0,
     "https://https://os-trnz.myshopify.com": 0.5,
     "https://https://mbt4hs-xg.myshopify.com": 0.5
   },
-  "19": {
+  "18": {
     "https://bon_appetit": 1.0,
     "https://hebbarskitchen": 1.0,
     "https://delish": 1.0
   },
-  "20": {
+  "19": {
     "https://eventbrite": 1.0
   },
-  "21": {
+  "20": {
     "https://ceramicsupplypittsburgh.com": 1.0,
     "https://https://ceramic-supply-inc.myshopify.com": 1.0,
     "https://standardclay.com": 1.0,
@@ -224,7 +224,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://mysterycreekceramics.co.nz": 1.0,
     "https://ceramic-supply-chicago.myshopify.com": 1.0
   },
-  "22": {
+  "21": {
     "https://souschef.co.uk": 1.0,
     "https://worldspicemerchants.myshopify.com": 1.0,
     "https://thespiceway.com": 0.5,
@@ -251,7 +251,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://makkah-market.myshopify.com": 1.0,
     "https://aafricanspices.myshopify.com": 1.0
   },
-  "23": {
+  "22": {
     "https://delish": 1.0,
     "https://bon_appetit": 1.0,
     "https://omnivorebooks.myshopify.com": 0.5,
@@ -260,7 +260,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://chefd.com": 0.5,
     "https://mediterranean_dish": 1.0
   },
-  "24": {
+  "23": {
     "https://https://mexico-by-hand.myshopify.com": 1.0,
     "https://https://pauls-supplies.myshopify.com": 1.0,
     "https://https://connectedgoods.myshopify.com": 1.0,
@@ -269,7 +269,7 @@ RATINGS_JSON: Dict[str, Dict[str, float]] = {
     "https://https://mappandthread.myshopify.com": 1.0,
     "https://https://na7xh7-9u.myshopify.com": 1.0
   },
-  "25": {
+  "24": {
     "https://omnivorebooks.myshopify.com": 0.5,
     "https://delish": 1.0,
     "https://bon_appetit": 1.0,
