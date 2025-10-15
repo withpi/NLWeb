@@ -117,8 +117,8 @@ class WhoHandler(NLWebHandler):
             "https://api.withpi.ai/v1/scoring_system/score",
             headers={
                 "x-api-key": os.environ.get("WITHPI_API_KEY", ""),
-                "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb-who",
-                "x-model-override": "pi-scorer-nlweb-who:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
+                "x-hotswaps": "pi-scorer-bert:pi-scorer-nlweb",
+                "x-model-override": "pi-scorer-nlweb:modal:https://pilabs-nlweb--pi-modelserver-scorermodel-invocations.modal.run",
             },
             json={
                 "llm_input": self.query,
