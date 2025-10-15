@@ -217,7 +217,7 @@ class WhoHandler(NLWebHandler):
         question_scores = resp.json()["question_scores"]
         if is_vertical_query:
             if question_scores["is_store"] > 0.25:
-                print(f"{url}  filtering 2 {question_scores["is_store"]}")
+                # print(f"{url}  filtering 2 {question_scores['is_store']}")
                 return 0
             for category, score in query_annotations.items():
                 if score > self.query_classification_threshold:
