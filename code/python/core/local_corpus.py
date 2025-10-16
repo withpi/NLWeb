@@ -281,7 +281,11 @@ class LocalCorpus:
         results = []
         for url, (url, json_str, name, site) in url_to_result.items():
             categories_list = url_to_categories[url]
-            results.append((url, json_str, name, site, categories_list))
+            json_obj = json.loads(json_str)
+            json_obj["url_original"] = json_obj["url"]
+            url = json_obj["url"].replace("https://", "")
+            json_obj["url"] = url
+            results.append((url, json.dumps(json_obj), name, site, categories_list))
         
         return results
 

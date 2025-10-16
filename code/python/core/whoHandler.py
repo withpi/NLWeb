@@ -15,7 +15,7 @@ import numpy as np
 
 logger = get_configured_logger("who_handler")
 
-DEFAULT_NLWEB_ENDPOINT = "https://nlwm.azurewebsites.net/ask"
+DEFAULT_NLWEB_ENDPOINT = "https://nlweb.withpi.ai/ask"
 
 def auto_score_cutoff(
     scores,
@@ -94,7 +94,7 @@ class WhoHandler(NLWebHandler):
 
         # Check if it's a Shopify site and add db parameter
         if site_type in ["ShopifyStore", "Shopify"] or "shopify" in site_url.lower():
-            params.append("db=shopify_mcp")
+            params.append("db=shopify") #_mcp")
 
         # Add tool parameter to go directly to search
         params.append("tool=search")
