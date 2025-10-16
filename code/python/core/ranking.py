@@ -238,6 +238,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
             return
         try:
             description = trim_json(json_str)
+            prompt_str = None
             if self.usePi:
                 pi_score = await self.piScoreItem(str(description))
                 ranking = {
@@ -274,7 +275,8 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 'sent': False
             }
 
-            record_llm_call(ansr, prompt_str, self.handler.query)
+            if prompt_str:
+                record_llm_call(ansr, prompt_str, self.handler.query)
             
             # Check if required_item_type is specified and filter based on @type
             if self.handler.required_item_type is not None:
