@@ -175,7 +175,7 @@ The user's question is: {request.query}. The item's description is {item.descrip
         self.num_results_sent = 0
         self.rankedAnswers = []
         self.ranking_type = ranking_type
-        self.usePi = os.environ.get("WITHPI_API_KEY", "") != ""
+        self.usePi = False
         self.scoreThreshold = 0 if self.usePi else 51
         self.client = httpx.AsyncClient(timeout=10.0)
 
