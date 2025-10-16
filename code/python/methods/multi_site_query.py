@@ -126,6 +126,7 @@ class MultiSiteQueryHandler:
         
         # Use site-specific query if provided by who service, otherwise use original query
         site_query = site_info.get('query', self.query)
+        print(f"site_query: {site_query}")
         
         try:
             

@@ -297,6 +297,7 @@ class RetrievalClientBase(VectorDBClientInterface):
         return any(s in available_sites for s in sites_to_check)
     
     async def _get_cached_sites(self) -> Optional[List[str]]:
+        print(f"In the handler!")
         """
         Get sites list with caching and background refresh.
         Uses stale-while-revalidate pattern for better performance.
@@ -395,25 +396,27 @@ class VectorDBClient:
                     logger.info(f"Development mode: Using database endpoint from params: {param_endpoint}")
                     endpoint_name = param_endpoint
         
+        print(f"ep name: {endpoint_name}")
+
         # If specific endpoint requested, validate and use it
         if endpoint_name:
             try:
                 if endpoint_name not in CONFIG.retrieval_endpoints:
                     available_endpoints = list(CONFIG.retrieval_endpoints.keys())
                     error_msg = f"Invalid endpoint: '{endpoint_name}'. Available endpoints: {', '.join(available_endpoints)}"
-                    logger.error(error_msg)
+                    print(error_msg)
                     raise ValueError(error_msg)
             except TypeError as e:
                 # This can happen if endpoint_name is unhashable (e.g., a list)
                 error_msg = f"Invalid endpoint name type: {type(endpoint_name).__name__}. Expected string, got: {endpoint_name}"
-                logger.error(error_msg)
+                print(error_msg)
                 raise ValueError(error_msg) from e
             
             # For backward compatibility, use only the specified endpoint
             endpoint_config = CONFIG.retrieval_endpoints[endpoint_name]
             self.enabled_endpoints = {endpoint_name: endpoint_config}
             self.db_type = endpoint_config.db_type  # Set db_type from the endpoint
-            logger.info(f"VectorDBClient initialized with specific endpoint: {endpoint_name}")
+            print(f"VectorDBClient initialized with specific endpoint: {endpoint_name}")
         else:
             # Get all enabled endpoints and validate they have required credentials
             self.enabled_endpoints = {}
@@ -425,15 +428,15 @@ class VectorDBClient:
                 if self._has_valid_credentials(name, config):
                     self.enabled_endpoints[name] = config
                 else:
-                    logger.warning(f"Endpoint {name} is enabled but missing required credentials, skipping")
+                    print(f"Endpoint {name} is enabled but missing required credentials, skipping")
             
             if not self.enabled_endpoints:
                 error_msg = "No enabled retrieval endpoints with valid credentials found"
-                logger.error(error_msg)
+                print(error_msg)
                 # Debug: show which endpoints were checked and why they were skipped
                 for name, config in CONFIG.retrieval_endpoints.items():
                     if config.enabled:
-                        logger.error(f"Endpoint {name} was enabled but skipped - missing credentials?")
+                        print(f"Endpoint {name} was enabled but skipped - missing credentials?")
                 raise ValueError(error_msg)
             
             # Set db_type to the first enabled endpoint's type (for logging)
@@ -441,7 +444,7 @@ class VectorDBClient:
                 first_endpoint = next(iter(self.enabled_endpoints.values()))
                 self.db_type = first_endpoint.db_type
             
-            logger.info(f"VectorDBClient initialized with {len(self.enabled_endpoints)} enabled endpoints: {list(self.enabled_endpoints.keys())}")
+            print(f"VectorDBClient initialized with {len(self.enabled_endpoints)} enabled endpoints: {list(self.enabled_endpoints.keys())}")
         
         # Validate write endpoint if configured (skip for specific endpoint mode)
         self.write_endpoint = CONFIG.write_endpoint
@@ -453,9 +456,9 @@ class VectorDBClient:
             if not self._has_valid_credentials(self.write_endpoint, write_config):
                 raise ValueError(f"Write endpoint '{self.write_endpoint}' is missing required credentials")
             
-            logger.info(f"Write operations will use endpoint: {self.write_endpoint}")
+            print(f"Write operations will use endpoint: {self.write_endpoint}")
         elif not endpoint_name:
-            logger.warning("No write endpoint configured - write operations will fail")
+            print("No write endpoint configured - write operations will fail")
         
         self._retrieval_lock = asyncio.Lock()
         
@@ -830,8 +833,8 @@ class VectorDBClient:
             site = site.replace(" ", "_")
 
         async with self._retrieval_lock:
-            logger.info(f"Searching for '{query[:50]}...' in site: {site}, num_results: {num_results}")
-            logger.info(f"Querying {len(self.enabled_endpoints)} enabled endpoints in parallel")
+            print(f"Searching for '{query[:50]}...' in site: {site}, num_results: {num_results}")
+            print(f"Querying {len(self.enabled_endpoints)} enabled endpoints in parallel")
             start_time = time.time()
             
             # Create tasks for parallel queries to endpoints that have the requested site
@@ -846,7 +849,7 @@ class VectorDBClient:
                     # If only one endpoint is enabled (e.g., explicit db= parameter), skip can_handle_query check
                     if len(self.enabled_endpoints) == 1:
                         # Single endpoint mode - use it regardless of can_handle_query
-                        logger.info(f"Single endpoint mode for {endpoint_name}, skipping can_handle_query check")
+                        print(f"Single endpoint mode for {endpoint_name}, skipping can_handle_query check")
                     else:
                         # Check if the provider can handle this query
                         # Pass query_params along with other kwargs
@@ -856,18 +859,20 @@ class VectorDBClient:
                     
                     # Use search_all_sites if site is "all"
                     if site == "all":
+                        print(f"searching all sites")
                         task = asyncio.create_task(client.search_all_sites(query, num_results, **kwargs))
                     else:
+                        print(f"searching single site {site} with {query}")
                         # Pass all arguments including handler to all clients
                         # Individual clients can choose to use or ignore the handler
                         task = asyncio.create_task(client.search(query, site, num_results, **kwargs))
                     tasks.append(task)
                     endpoint_names.append(endpoint_name)
                 except Exception as e:
-                    logger.warning(f"Failed to create search task for endpoint {endpoint_name}: {e}")
+                    print(f"Failed to create search task for endpoint {endpoint_name}: {e}")
             
             if skipped_endpoints:
-                logger.debug(f"Skipped endpoints without site '{site}': {skipped_endpoints}")
+                print(f"Skipped endpoints without site '{site}': {skipped_endpoints}")
             
             if not tasks:
                 raise ValueError("No valid endpoints available for search")
@@ -881,9 +886,9 @@ class VectorDBClient:
             
             for endpoint_name, result in zip(endpoint_names, results):
                 if isinstance(result, Exception):
-                    logger.warning(f"Search failed for endpoint {endpoint_name}: {result}")
+                    print(f"Search failed for endpoint {endpoint_name}: {result}")
                 elif result is None:
-                    logger.warning(f"Endpoint {endpoint_name} returned None, treating as empty results")
+                    print(f"Endpoint {endpoint_name} returned None, treating as empty results")
                     endpoint_results[endpoint_name] = []
                 else:
                     endpoint_results[endpoint_name] = result

@@ -108,8 +108,10 @@ async def handle_regular_ask(request: web.Request, query_params: Dict[str, Any])
         generate_mode = query_params.get('generate_mode', 'none')
         
         if generate_mode == 'generate':
+            print(f"here 2 {query_params}")
             handler = GenerateAnswer(query_params, None)
         else:
+            print(f"here 1 {query_params}")
             from core.baseHandler import NLWebHandler
             handler = NLWebHandler(query_params, None)
         

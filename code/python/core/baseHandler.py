@@ -388,6 +388,7 @@ class NLWebHandler:
         # Check if a specific tool is requested via the 'tool' parameter
         requested_tool = get_param(self.query_params, "tool", str, None)
         if requested_tool:
+            print(f"tool requested; {requested_tool}")
             # Skip tool selection and use the requested tool directly
             # Set tool_routing_results to use the specified tool
             self.tool_routing_results = [
@@ -427,13 +428,16 @@ class NLWebHandler:
             self.pre_checks_done_event.set()  # Signal completion regardless of errors
             self.state.set_pre_checks_done()
 
+        print(f"waiting")
         # Wait for retrieval to be done
         if not self.retrieval_done_event.is_set():
             # Skip retrieval for sites without embeddings
             if not site_supports_standard_retrieval(self.site):
+                print(f"skipping")
                 self.final_retrieved_items = []
                 self.retrieval_done_event.set()
             else:
+                print(f"searching! {self.decontextualized_query}, {self.site}, {self.query_params}")
                 items = await search(
                     self.decontextualized_query,
                     self.site,
@@ -442,7 +446,7 @@ class NLWebHandler:
                 )
                 self.final_retrieved_items = items
                 self.retrieval_done_event.set()
-
+        print(f"here 4")
         logger.info("Preparation phase completed")
 
     def decontextualizeQuery(self):
