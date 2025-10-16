@@ -40,6 +40,7 @@ class FastTrack:
     def is_fastTrack_eligible(self):
         """Check if query is eligible for fast track processing"""
         # Skip fast track for sites without standard retrieval
+        return False
         if not site_supports_standard_retrieval(self.handler.site):
             return False
         if (self.handler.context_url != ''):
@@ -58,7 +59,7 @@ class FastTrack:
             return
         
         logger.info("Starting fast track processing")
-        
+        print(f"using fast track")
         self.handler.retrieval_done_event.set()  # Use event instead of flag
         
         try:

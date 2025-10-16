@@ -9,9 +9,13 @@ from core.local_corpus import LOCAL_CORPUS
 from core.schemas import create_assistant_result
 from core.utils.json_utils import trim_json
 import numpy as np
+from core.whoRanking import WhoRanking
+from core.retriever import search
 
 # Who handler is work in progress for answering questions about who
 # might be able to answer a given query
+
+_vector_db_cache = {}
 
 logger = get_configured_logger("who_handler")
 
@@ -112,20 +116,20 @@ class WhoHandler(NLWebHandler):
                     if "url" in result:
                         url = result["url"]
                         # If URL doesn't start with http:// or https://, convert to /ask endpoint
-                        if not url.startswith(("http://", "https://")):
-                            site_type = result.get("@type", "")
-                            result["url"] = self._build_nlweb_url(url, site_type)
-                            logger.debug(
-                                f"Modified URL from '{url}' to '{result['url']}'"
-                            )
+                        #if not url.startswith(("http://", "https://")):
+                        site_type = result.get("@type", "")
+                        result["url"] = self._build_nlweb_url(url, site_type)
+                        print(
+                            f"Modified URL from '{url}' to '{result['url']}'"
+                        )
 
             # Handle single result messages
             elif "url" in message:
                 url = message["url"]
-                if not url.startswith(("http://", "https://")):
-                    site_type = message.get("@type", "")
-                    message["url"] = self._build_nlweb_url(url, site_type)
-                    logger.debug(f"Modified URL from '{url}' to '{message['url']}'")
+                #if not url.startswith(("http://", "https://")):
+                site_type = message.get("@type", "")
+                message["url"] = self._build_nlweb_url(url, site_type)
+                print(f"Modified URL from '{url}' to '{message['url']}'")
 
         # Call parent class's send_message with modified message
         await super().send_message(message)
@@ -419,7 +423,55 @@ class WhoHandler(NLWebHandler):
         # print(f"Search cats: {search_cats}")
         return query_annotations
 
+    async def whoRetrieveInt(self, query):
+        # Check cache first
+        if query in _vector_db_cache:
+            logger.debug(f"Cache hit for query: {query}")
+            items = _vector_db_cache[query]
+        else:
+            logger.debug(f"Cache miss for query: {query}")
+            items = await search(
+                    query,
+                    site='nlweb_sites',  # Use the sites collection
+                    query_params=self.query_params,
+                    num_results=20
+                )
+            # Store in cache
+            _vector_db_cache[query] = items
+
+        for item in items:
+            if (item not in self.final_retrieved_items):
+                self.final_retrieved_items.append(item) 
+
+    async def oldRunQuery(self):
+        print(f"OLD HANDLER CALLED")
+        try:
+            # Send begin-nlweb-response message at the start
+            await self.message_sender.send_begin_response()
+            tasks = []
+            queries = [self.query]
+            for query in queries:
+                tasks.append(asyncio.create_task(self.whoRetrieveInt(query)))
+            await asyncio.gather(*tasks, return_exceptions=True)       
+       
+            self.ranker = WhoRanking(self, self.final_retrieved_items)
+            await self.ranker.do()
+            
+            # Send end-nlweb-response message at the end
+            await self.message_sender.send_end_response()
+
+            return [msg.to_dict() for msg in self.messages]
+
+        except Exception as e:
+            # Send end-nlweb-response even on error
+            await self.message_sender.send_end_response(error=True)
+            raise
+
     async def runQuery(self):
+        print(f"params!!: {self.query_params}")
+        if "site" in self.query_params and self.query_params["site"] and self.query_params["site"] != "all":
+            return self.oldRunQuery()
+
         # Always use general search with nlweb_sites
         logger.info("Using general search method with site=nlweb_sites for who query")
 

@@ -140,6 +140,8 @@ def load_queries(dataset_name: str, queries_config: str, split: str) -> List[Que
     queries: List[Query] = []
     for ex in ds_queries:
         qid = int(ex["query_id"])
+        #if qid != 14:
+        #    continue
         text = ex["query_text"]
         queries.append(Query(qid, text))
     return queries

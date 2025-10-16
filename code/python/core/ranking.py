@@ -230,16 +230,15 @@ The user's question is: {request.query}. The item's description is {item.descrip
     async def rankItem(self, url, json_str, name, site):
 
         # Debug: Print site information
-        # print(f"[rankItem] Processing item - URL: {url}, Site: {site}, Handler.site: {getattr(self.handler, 'site', 'NO SITE ATTR')}")
+        print(f"[rankItem] Processing item - URL: {url}, Site: {site}, Handler.site: {getattr(self.handler, 'site', 'NO SITE ATTR')}")
 
         if (self.ranking_type == Ranking.FAST_TRACK and self.handler.state.should_abort_fast_track()):
-            logger.info("Fast track aborted, skipping item ranking")
-            logger.info("Aborting fast track")
+            print("Fast track aborted, skipping item ranking")
+            print("Aborting fast track")
             return
         try:
             description = trim_json(json_str)
-            prompt_str = None
-            if self.usePi:
+            if False: # self.usePi:
                 pi_score = await self.piScoreItem(str(description))
                 ranking = {
                     "score": pi_score,
@@ -461,8 +460,8 @@ The user's question is: {request.query}. The item's description is {item.descrip
                 self.handler.connection_alive_event.clear()
 
     async def do(self):
-        logger.info(f"Starting ranking process with {len(self.items)} items")
-        logger.info(f"Processing {len(self.items)} items for ranking")
+        print(f"Starting ranking process with {len(self.items)} items")
+        print(f"Processing {len(self.items)} items for ranking")
         tasks = []
         for url, json_str, name, site in self.items:
             if (
