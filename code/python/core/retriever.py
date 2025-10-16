@@ -843,7 +843,9 @@ class VectorDBClient:
             skipped_endpoints = []
             
             for endpoint_name in self.enabled_endpoints:
+                print(f"Endpoint name: {endpoint_name}")
                 try:
+                    print(f"Getting client for {endpoint_name}")
                     client = await self.get_client(endpoint_name)
                     
                     # If only one endpoint is enabled (e.g., explicit db= parameter), skip can_handle_query check
@@ -853,7 +855,8 @@ class VectorDBClient:
                     else:
                         # Check if the provider can handle this query
                         # Pass query_params along with other kwargs
-                        if not await client.can_handle_query(site, query_params=self.query_params, **kwargs):
+                        kwargs['query_params'] = self.query_params
+                        if not await client.can_handle_query(site, **kwargs):
                             skipped_endpoints.append(endpoint_name)
                             continue
                     
@@ -865,6 +868,7 @@ class VectorDBClient:
                         print(f"searching single site {site} with {query}")
                         # Pass all arguments including handler to all clients
                         # Individual clients can choose to use or ignore the handler
+                        print(f"Searching site {site} for {endpoint_name}, {client}")
                         task = asyncio.create_task(client.search(query, site, num_results, **kwargs))
                     tasks.append(task)
                     endpoint_names.append(endpoint_name)
